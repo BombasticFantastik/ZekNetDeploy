@@ -1,3 +1,4 @@
 **/__pycache__/
 **/models_weights/*
 **/.venv
+**/.vscode

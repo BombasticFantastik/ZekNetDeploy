@@ -1,19 +1,17 @@
 import os
 import cv2
 import numpy as np
-from fastapi import UploadFile
-import os
 import base64
 
 from app.core.config import settings
-from app.utils.image_processing import init_detector, detect_faces
+# Импортируем твой новый класс детектора из нового места
+from app.services.detection_service import SCRFDFaceDetector
+# Эмбеддинг и утилиты соседа оставляем нетронутыми
 from app.utils.vectorization import BuffaloModel, open_numpy_as_tensor, get_vector_from_face
-
 
 BASE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
-
 
 def encode(img):
     _, buffer = cv2.imencode(".jpg", img)
@@ -31,23 +29,21 @@ class CVEngine:
             "utils/models_weights/w600k_r50.onnx"
         )
 
-        self.detector = init_detector(self.detector_path, target_size=2048)
+        # ИСПРАВЛЕНО: Теперь инициализируем твой класс детектора вместо старой функции init_detector
+        self.detector = SCRFDFaceDetector(model_path=self.detector_path, target_size=2048)
         self.embedder = BuffaloModel(path=self.embedder_path, use_gpu=False)
 
-    def process_formation_image(self, image: np.ndarray) -> list[list[float]]:
-        """Принимает путь к сохраненному фото построения.
-        Возвращает список векторов (каждый вектор — List[float] длиной 512)"""
-        detected_faces = detect_faces(
-            image=image,
-            detector=self.detector,
-            conf_thresh=0.25
-        )
+    def process_formation_image(self, image: np.ndarray) -> list[dict]:
+        detected_faces = self.detector.detect_faces(image=image, conf_thresh=0.25)
 
         faces = []
-
         for face in detected_faces:
             face_numpy = face["image"]
+            
+            # ВОЗВРАЩАЕМ КАК БЫЛО: используем строго ту же функцию, что и в /scan!
             face_tensor = open_numpy_as_tensor(face_numpy)
+            
+            # Передаем тензор, в котором пиксели нормализованы к 0-1
             face_vector = get_vector_from_face(face_tensor, self.embedder)
             clean_vector = face_vector.flatten().tolist()
 

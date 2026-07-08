@@ -57,6 +57,7 @@ class ImageComparisonService():
 
             if type(image)==bytes:
                  image=self.open_bytes_as_numpy(image)
+                 
             detected_faces = detect_faces(
                 image=image,
                 detector=detector,

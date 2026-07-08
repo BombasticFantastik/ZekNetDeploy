@@ -6,7 +6,7 @@ from app.core.minio_client import MinIOCLient
 from app.dependencies.minio import get_minio_client
 from app.core.config import settings
 
-from app.core.cv_engine import detect_faces
+
 from app.core.cv_engine import cv_engine
 
 router = APIRouter(
@@ -32,11 +32,11 @@ async def upload_inference(
     if image is None:
         raise HTTPException(status_code=400, detail="Invalid image file")
     
-    detected_faces = detect_faces(
+    # ИСПРАВЛЕНО: Теперь вызываем метод detect_faces у твоего нового класса детектора
+    detected_faces = cv_engine.detector.detect_faces(
         image=image,
-        detector=cv_engine.detector,
         conf_thresh=0.25
-    ) # FIX
+    )
 
     uploaded_ids = [] # FIX
 

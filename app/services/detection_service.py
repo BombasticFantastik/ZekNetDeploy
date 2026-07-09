@@ -5,34 +5,12 @@ import numpy as np
 import os
 import torch
 
-from fastapi import FastAPI
-from contextlib import asynccontextmanager 
-
 # Твои импорты интерфейсов и детектора
 from app.interfaces.image_processing import FaceDetectorInterface
-from app.utils.image_processing import SCRFDFaceDetector
 
 # Импорты эмбеддера напарника
-from app.utils.vectorization import BuffaloModel, open_numpy_as_tensor, get_vector_from_face
 from app.interfaces.vectorization import BuffaloModelInterface, FaceOperationsInterface
 
-DETECTOR_PATH = os.path.join("app", "utils", "models_weights", "scrfd_500m_bnkps.onnx")
-EMBEDDER_PATH = os.path.join("app", "utils", "models_weights", "w600k_r50.onnx")
-
-_detector: SCRFDFaceDetector | None=None
-_embedder: BuffaloModel | None=None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _detector, _embedder
-
-    _detector = SCRFDFaceDetector(model_path=DETECTOR_PATH, target_size=2048)
-    _embedder = BuffaloModel(path=EMBEDDER_PATH, use_gpu=False)
-
-    yield
-
-    del _detector
-    del _embedder
 
 class ProcessedFaceResult(TypedDict):
     image_base64: str          # Закодированное в base64 изображение (для фронта)
@@ -113,10 +91,3 @@ class PhotoScanMLService:
             })
             
         return final_ml_results
-
-
-def get_ml_service() -> PhotoScanMLService:
-    """Зависимость МЛ моделей"""
-    if _detector is None or _embedder is None:
-        raise RuntimeError("ML модели не смогли инициилизроваться в lifespan")
-    return PhotoScanMLService(detector=_detector, embedder=_embedder)

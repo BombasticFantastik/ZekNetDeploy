@@ -1,22 +1,15 @@
 import os
-import cv2
-import numpy as np
-import base64
-
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
 
 from app.core.config import settings
-from app.services.detection_service import SCRFDFaceDetector
+
+from app.utils.image_processing import SCRFDFaceDetector
 from app.utils.vectorization import BuffaloModel
+from app.utils.vectorization import FaceOperations
 
 BASE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
 
-# def encode(img):
-#     _, buffer = cv2.imencode(".jpg", img)
-#     return base64.b64encode(buffer).decode("utf-8")
 
 class CVEngine:
     def __init__(self):
@@ -31,6 +24,7 @@ class CVEngine:
 
         self.detector = SCRFDFaceDetector(model_path=self.detector_path, target_size=2048)
         self.embedder = BuffaloModel(path=self.embedder_path, use_gpu=False)
+        self.face_operations = FaceOperations()
 
 
 _cv_instance: CVEngine | None = None

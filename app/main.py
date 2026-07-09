@@ -15,7 +15,7 @@ from app.core.cv_engine import init_cv_engine, close_cv_engine
 @asynccontextmanager
 async def global_lifespan(app: FastAPI):
     await init_cv_engine()
-
+    
     yield
 
     await close_cv_engine()
@@ -24,5 +24,5 @@ async def global_lifespan(app: FastAPI):
 app = FastAPI(lifespan=global_lifespan)
 
 
-app.include_router(photoscan_router)
-app.include_router(bucket_loader_router)
+# app.include_router(photoscan_router)
+# app.include_router(bucket_loader_router)

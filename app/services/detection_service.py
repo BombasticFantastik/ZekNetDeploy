@@ -5,12 +5,34 @@ import numpy as np
 import os
 import torch
 
+from fastapi import FastAPI
+from contextlib import asynccontextmanager 
+
 # Твои импорты интерфейсов и детектора
 from app.interfaces.image_processing import FaceDetectorInterface
 from app.utils.image_processing import SCRFDFaceDetector
 
 # Импорты эмбеддера напарника
 from app.utils.vectorization import BuffaloModel, open_numpy_as_tensor, get_vector_from_face
+from app.interfaces.vectorization import BuffaloModelInterface, FaceOperationsInterface
+
+DETECTOR_PATH = os.path.join("app", "utils", "models_weights", "scrfd_500m_bnkps.onnx")
+EMBEDDER_PATH = os.path.join("app", "utils", "models_weights", "w600k_r50.onnx")
+
+_detector: SCRFDFaceDetector | None=None
+_embedder: BuffaloModel | None=None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _detector, _embedder
+
+    _detector = SCRFDFaceDetector(model_path=DETECTOR_PATH, target_size=2048)
+    _embedder = BuffaloModel(path=EMBEDDER_PATH, use_gpu=False)
+
+    yield
+
+    del _detector
+    del _embedder
 
 class ProcessedFaceResult(TypedDict):
     image_base64: str          # Закодированное в base64 изображение (для фронта)
@@ -21,9 +43,15 @@ class ProcessedFaceResult(TypedDict):
 
 
 class PhotoScanMLService:
-    def __init__(self, detector: FaceDetectorInterface, embedder: BuffaloModel):
+    def __init__(
+            self, 
+            detector: FaceDetectorInterface, 
+            embedder: BuffaloModelInterface,
+            face_operatorions: FaceOperationsInterface
+    ):
         self.detector = detector
         self.embedder = embedder
+        self.face_operatorions = face_operatorions
 
     def process_raw_image_bytes(self, content: bytes) -> list[ProcessedFaceResult]:
         """
@@ -59,10 +87,10 @@ class PhotoScanMLService:
             # 3. Работа с эмбеддером в точности как в старом cv_engine
             try:
                 # Превращаем готовый кроп в тензор [1, 3, 112, 112] через функцию напарника
-                tensor_img = open_numpy_as_tensor(face_numpy)
+                tensor_img = self.face_operatorions.open_numpy_as_tensor(face_numpy)
                 
                 # Извлекаем эмбеддинг
-                vector_np = get_vector_from_face(tensor_img, self.embedder)
+                vector_np = self.face_operatorions.get_vector_from_face(tensor_img, self.embedder)
                 
                 # Сглаживаем в плоский список для базы данных
                 clean_vector = vector_np.flatten().tolist()
@@ -86,21 +114,9 @@ class PhotoScanMLService:
             
         return final_ml_results
 
-# =====================================================================
-# ИНИЦИАЛИЗАЦИЯ И ЗАВИСИМОСТИ FASTAPI (Синглтоны в памяти)
-# =====================================================================
-
-# Пути к весам моделей
-DETECTOR_PATH = os.path.join("app", "utils", "models_weights", "scrfd_500m_bnkps.onnx")
-EMBEDDER_PATH = os.path.join("app", "utils", "models_weights", "w600k_r50.onnx")
-
-# Инициализируем синглтоны один раз при старте приложения
-_detector_instance = SCRFDFaceDetector(model_path=DETECTOR_PATH)
-_embedder_instance = BuffaloModel(path=EMBEDDER_PATH, use_gpu=False)
 
 def get_ml_service() -> PhotoScanMLService:
-    """Провайдер для FastAPI (Depends)"""
-    return PhotoScanMLService(
-        detector=_detector_instance,
-        embedder=_embedder_instance
-    )
+    """Зависимость МЛ моделей"""
+    if _detector is None or _embedder is None:
+        raise RuntimeError("ML модели не смогли инициилизроваться в lifespan")
+    return PhotoScanMLService(detector=_detector, embedder=_embedder)

@@ -67,7 +67,7 @@ async def upload_inference(
         "uplodaed_file_ids": uploaded_ids
     }
 
-# -
+
 @router.get("/image/{bucket}/{file_id}")
 def get_image(bucket: str, file_id: str):
     data = MinIOCLient.get_image(bucket, file_id)

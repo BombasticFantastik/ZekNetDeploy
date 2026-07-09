@@ -55,8 +55,7 @@ class BuffaloModel(Module):
         return output_tensor
 
 class FaceOperations:
-
-    def compare_new_face(img,vectors,model,treshold=1.5):
+    def compare_new_face(self, img,vectors,model,treshold=1.5):
         """
         ВХОД: Изображения лица,все вектора, модель для векторизации и порог отсечения фото
         ВЫХОД: Индекс наиболее схожего человека из переданного массива векторов
@@ -77,7 +76,7 @@ class FaceOperations:
             return 0
             
 
-    def get_vector_from_face(img,model):
+    def get_vector_from_face(self, img,model):
         """
         ВХОД: Изображения лица в формате тензора
         ВЫХОД: Вектор лица 
@@ -87,7 +86,7 @@ class FaceOperations:
         return new_vector.numpy()
 
 
-    def open_numpy_as_tensor(numpy_img):
+    def open_numpy_as_tensor(self, numpy_img):
         """
         ВХОД: Изображение в формате numpy
         ВЫХОД: Изображение в формате тензора

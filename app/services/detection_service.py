@@ -2,8 +2,6 @@ import base64
 from typing import TypedDict, List
 import cv2
 import numpy as np
-import os
-import torch
 
 # Твои импорты интерфейсов и детектора
 from app.interfaces.image_processing import FaceDetectorInterface
@@ -13,11 +11,11 @@ from app.interfaces.vectorization import BuffaloModelInterface, FaceOperationsIn
 
 
 class ProcessedFaceResult(TypedDict):
-    image_base64: str          # Закодированное в base64 изображение (для фронта)
-    face_bytes: bytes          # Сжатые байты .jpg для сохранения в MinIO
-    bbox: list[int]            # Координаты лица
-    score: float               # Уверенность модели
-    embedding: list[float]     # РЕАЛЬНЫЙ вектор для pgvector
+    image_base64: str
+    face_bytes: bytes
+    bbox: list[int]
+    score: float
+    embedding: list[float]
 
 
 class PhotoScanMLService:
@@ -25,11 +23,11 @@ class PhotoScanMLService:
             self, 
             detector: FaceDetectorInterface, 
             embedder: BuffaloModelInterface,
-            face_operatorions: FaceOperationsInterface
+            face_operations: FaceOperationsInterface
     ):
         self.detector = detector
         self.embedder = embedder
-        self.face_operatorions = face_operatorions
+        self.face_operations = face_operations
 
     def process_raw_image_bytes(self, content: bytes) -> list[ProcessedFaceResult]:
         """
@@ -55,6 +53,7 @@ class PhotoScanMLService:
                 
             # 1. Сжимаем матрицу лица в JPG-байты для MinIO
             success, encoded_face = cv2.imencode(".jpg", face_numpy)
+
             if not success:
                 continue
             face_bytes = encoded_face.tobytes()
@@ -65,10 +64,10 @@ class PhotoScanMLService:
             # 3. Работа с эмбеддером в точности как в старом cv_engine
             try:
                 # Превращаем готовый кроп в тензор [1, 3, 112, 112] через функцию напарника
-                tensor_img = self.face_operatorions.open_numpy_as_tensor(face_numpy)
+                tensor_img = self.face_operations.open_numpy_as_tensor(face_numpy)
                 
                 # Извлекаем эмбеддинг
-                vector_np = self.face_operatorions.get_vector_from_face(tensor_img, self.embedder)
+                vector_np = self.face_operations.get_vector_from_face(tensor_img, self.embedder)
                 
                 # Сглаживаем в плоский список для базы данных
                 clean_vector = vector_np.flatten().tolist()

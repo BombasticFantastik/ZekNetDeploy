@@ -10,12 +10,6 @@ FaceVector = NDArray[np.float32]
 
 class BuffaloModelInterface(ABC):
     """Интерфейс для векторизации лиц на базе ONNX-модели Buffalo."""
-
-    @abstractmethod
-    def __init__(self, path: str, use_gpu: bool = False) -> None:
-        """Инициализация сессии модели по указанному пути."""
-        pass
-
     @abstractmethod
     def forward(self, x: Union[torch.Tensor, NDArray[np.float32]]) -> torch.Tensor:
         """

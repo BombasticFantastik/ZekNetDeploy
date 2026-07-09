@@ -32,7 +32,7 @@ _cv_instance: CVEngine | None = None
 
 async def init_cv_engine():
     global _cv_instance
-    _cv_instance = CVEngine
+    _cv_instance = CVEngine()
 
 
 async def close_cv_engine():

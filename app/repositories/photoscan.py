@@ -63,5 +63,21 @@ class PhotoScanRepository:
 
         self.db.add(log)
 
+    async def get_existing_paths(self, paths: list[str]):
+        result = await self.db.scalars(
+            select(PrisonerEtalon.photo_minio_path)
+            .where(PrisonerEtalon.photo_minio_path.in_(paths))
+        )
+
+        return set(result.all())
+    
+    def create_etalon(self, photo_path: str, embedding: list[float]):
+        etalon = PrisonerEtalon(
+            photo_minio_path=photo_path,
+            face_embedding=embedding
+        )
+
+        self.db.add(etalon)
+
     async def commit(self):
         await self.db.commit()

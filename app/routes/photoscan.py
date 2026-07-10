@@ -36,83 +36,14 @@ async def scan_formation(
 
     return result
 
-# # +
-# @router.post("/scan")
-# async def scan_formation(
-#     minio: MinIOCLient = Depends(get_minio_client),
-#     db: AsyncSession = Depends(get_db)
-# ):
-#     """
-#     Сканирует бакет эталонов MinIO, находит новые фото, 
-#     которых еще нет в PostgreSQL, генерирует по ним 512-мерные 
-#     векторы и сохраняет в базу. Повторно старые фото не обрабатывает
-#     """
-#     try:
-#         minio_files = await minio.list_images(bucket=settings.INFERENCE_BUCKET)  # Вынести в репо слой (бэкенд)
 
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Ошибка чтения хранилища MinIO: {e}")
-    
-#     if not minio_files:  # Вынести в репо слой (бэкенд)
-#         return {
-#             "status": "success",
-#             "message": "Бакет эталонов в MinIO пуст"
-#         }
-
-#     existing_paths = set( # Вынести в репо слой (бэкенд)
-#         (await db.scalars(
-#             select(PrisonerEtalon.photo_minio_path)
-#             .where(PrisonerEtalon.photo_minio_path.in_(minio_files))
-#         )).all()
-#     )
-
-#     new_files = [f for f in minio_files if f not in existing_paths] # Вынести в сервис слой (бэкенд)
-
-#     if not new_files:
-#         return {
-#             "status": "success",
-#             "message": "Синхронизация не требуется. Для всех файлов в MinIO уже созданы векторы в БД",
-#             "total_files_checked": len(minio_files)
-#         }
-    
-#     new_records_count = 0
-
-#     for file_key in new_files:
-#         try:
-#             file_bytes = await minio.get_image(  # Вынести в репо слой (бэкенд)
-#                 bucket=settings.INFERENCE_BUCKET,
-#                 file_id=file_key
-#             )
-
-#             nparr = np.frombuffer(file_bytes, np.uint8) # FIX
-#             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR) # FIX
-
-#             if image is None:
-#                 print(f"Файл {file_key} поврежден или не является корректным изображением.")
-#                 continue
-
-#             face_tensor = open_numpy_as_tensor(image) # FIX
-#             face_vector = get_vector_from_face(face_tensor, cv_engine.embedder) # FIX
-#             face_embedding = face_vector.flatten().tolist() # FIX
-
-#             new_etalon = PrisonerEtalon(
-#                 photo_minio_path=file_key,
-#                 face_embedding=face_embedding
-#             ) # Вынести в репо слой (бэкенд)
-
-#             db.add(new_etalon) # Вынести в репо слой (бэкенд)
-#             new_records_count += 1 # Вынести в сервис слой (бэкенд)
-
-#         except Exception as e:
-#             print(f"Не удалось обработать файл {file_key}: {e}")
-#             continue
-
-#     if new_records_count > 0:
-#         await db.commit() # Вынести в репо слой (бэкенд)
-
-#     return {
-#         "status": "success",
-#         "total_files_in_minio": len(minio_files),
-#         "already_processed_earlier": len(existing_paths),
-#         "newly_vectorized_and_saved": new_records_count
-#     }
+@router.post("/scan")
+async def scan_formation(
+    service: PhotoScanService = Depends(get_photoscan_service)
+):
+    """
+    Сканирует бакет эталонов MinIO, находит новые фото, 
+    которых еще нет в PostgreSQL, генерирует по ним 512-мерные 
+    векторы и сохраняет в базу. Повторно старые фото не обрабатывает
+    """
+    return await service.embedding_formation()

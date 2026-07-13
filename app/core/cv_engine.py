@@ -19,7 +19,7 @@ class CVEngine:
         )
         self.embedder_path = os.path.join(
             BASE_DIR,
-            "utils/models_weights/w600k_r50.onnx"
+            "utils/models_weights/adaface_ir101.onnx"
         )
 
         self.detector = SCRFDFaceDetector(model_path=self.detector_path, target_size=2048)

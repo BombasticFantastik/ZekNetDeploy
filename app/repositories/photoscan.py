@@ -24,7 +24,8 @@ class PhotoScanRepository:
         result = await self.db.execute(
             select(
                 PrisonerEtalon.id,
-                PrisonerEtalon.photo_minio_path
+                PrisonerEtalon.photo_minio_path,
+                PrisonerEtalon.fio
             )
             .order_by(
                 PrisonerEtalon.face_embedding.l2_distance(embedding)
@@ -37,12 +38,14 @@ class PhotoScanRepository:
         if row:
             return {
                     "id": row[0],
-                    "photo": row[1]
+                    "photo": row[1],
+                    "fio": row[2]
             }
 
         return {
             "id": None,
-            "photo": None
+            "photo": None,
+            "fio": None
         }
     
     async def create_log(
@@ -71,10 +74,11 @@ class PhotoScanRepository:
 
         return set(result.all())
     
-    def create_etalon(self, photo_path: str, embedding: list[float]):
+    def create_etalon(self, photo_path: str, embedding: list[float], fio: str | None = None):
         etalon = PrisonerEtalon(
             photo_minio_path=photo_path,
-            face_embedding=embedding
+            face_embedding=embedding,
+            fio=fio
         )
 
         self.db.add(etalon)

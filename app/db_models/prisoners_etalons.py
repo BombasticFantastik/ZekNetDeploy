@@ -11,6 +11,8 @@ class PrisonerEtalon(Base):
     __tablename__ = "prisoners_etalons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Добавил ФИО человека
+    fio: Mapped[str] = mapped_column(String(255), nullable=True)
     photo_minio_path: Mapped[str] = mapped_column(
         String(512), 
         nullable=False,

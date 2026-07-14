@@ -32,6 +32,7 @@ def upgrade() -> None:
     )
     op.create_table('prisoners_etalons',
     sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('fio', sa.String(length=255), nullable=True),
     sa.Column('photo_minio_path', sa.String(length=512), nullable=False),
     sa.Column('face_embedding', Vector(512), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),

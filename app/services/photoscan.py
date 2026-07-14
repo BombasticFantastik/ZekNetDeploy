@@ -45,7 +45,7 @@ class PhotoScanService:
 
             matched_rows = await self.repo.find_match(face["embedding"])
 
-            await self.repo.create_log(  # Вынести в репо слой (бэкенд)
+            await self.repo.create_log(
                 session.id,
                 matched_rows["id"],
                 face["score"],
@@ -55,6 +55,7 @@ class PhotoScanService:
 
             report.append({
                 "matched_person_minio_identity": matched_rows["photo"],
+                "matched_person_fio": matched_rows["fio"],
                 "confidence_score": face["score"],
                 "bbox": face["bbox"],
                 "cropped_face_storage_path": cropped_path,

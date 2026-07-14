@@ -3,6 +3,10 @@ from app.services.detection_service import PhotoScanMLService
 from app.repositories.photoscan import PhotoScanRepository
 from app.services.embedding_service import EmbeddingMLService
 
+from uuid import uuid4
+import itertools
+from fastapi import UploadFile
+
 from app.core.config import settings
 
 
@@ -71,30 +75,65 @@ class PhotoScanService:
             "verified_members": report
         }
     
-    async def embedding_formation(self):
-        minio_files = await self.minio.list_images(bucket=settings.INFERENCE_BUCKET)
-        existing = await self.repo.get_existing_paths(minio_files)
+    async def embedding_formation(self, files: list[UploadFile], fios: list[str]):
+        DUPLICATE_THRESHOLD = 0.6
 
-        new_files = [file for file in minio_files if file not in existing]
+        processed_count = 0
+        skipped_count = 0
 
-        for file in new_files:
-            file_bytes = await self.minio.get_image(
-                bucket=settings.INFERENCE_BUCKET,
-                file_id=file
-            )
+        if not files:
+            return {
+                "status": "success",
+                "newly_vectorized_and_saved": 0,
+                "skipped_duplicates": 0
+            }
+        
+        fios_list = fios if fios is not None else []
+
+        for file, fio in itertools.zip_longest(files, fios_list, fillvalue=None):
+            if file is None or not file.filename:
+                continue
+
+            file_bytes = await file.read()
 
             embedding = self.embedding_service.create_embedding(file_bytes)
 
-            self.repo.create_etalon(
-                file,
-                embedding
+            if not embedding:
+                continue
+
+            match = await self.repo.find_match(embedding)
+
+            if match and match["distance"] <= DUPLICATE_THRESHOLD:
+                skipped_count += 1
+                continue
+
+            ext = (
+                file.filename.split(".")[-1]
+                if "." in file.filename
+                else "jpg"
             )
 
-        await self.repo.commit()
+            unique_filename = f"{uuid4()}.{ext}"
+
+            await self.minio.put_image(
+                bucket=settings.INFERENCE_BUCKET,
+                file_id=unique_filename,
+                data=file_bytes
+            )
+
+            self.repo.create_etalon(
+                photo_path=unique_filename,
+                embedding=embedding,
+                fio=fio
+            )
+
+            processed_count += 1
+
+        if processed_count:
+            await self.repo.commit()
 
         return {
             "status": "success",
-            "total_files_in_minio": len(minio_files),
-            "already_processed_earlier": len(existing),
-            "newly_vectorized_and_saved": len(new_files)
+            "newly_vectorized_and_saved": processed_count,
+            "skipped_duplicates": skipped_count
         }

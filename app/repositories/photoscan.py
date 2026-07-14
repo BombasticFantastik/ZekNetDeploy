@@ -21,15 +21,16 @@ class PhotoScanRepository:
         return session
     
     async def find_match(self, embedding):
+        distance = PrisonerEtalon.face_embedding.l2_distance(embedding)
+
         result = await self.db.execute(
             select(
                 PrisonerEtalon.id,
                 PrisonerEtalon.photo_minio_path,
-                PrisonerEtalon.fio
+                PrisonerEtalon.fio,
+                distance.label("distance")
             )
-            .order_by(
-                PrisonerEtalon.face_embedding.l2_distance(embedding)
-            )
+            .order_by(distance)
             .limit(1)
         )
 
@@ -39,14 +40,11 @@ class PhotoScanRepository:
             return {
                     "id": row[0],
                     "photo": row[1],
-                    "fio": row[2]
+                    "fio": row[2],
+                    "distance": row[3]
             }
 
-        return {
-            "id": None,
-            "photo": None,
-            "fio": None
-        }
+        return None
     
     async def create_log(
         self,

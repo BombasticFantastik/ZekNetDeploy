@@ -1,11 +1,8 @@
-from fastapi import APIRouter, Depends, UploadFile, File
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, UploadFile, File, Form
+from typing import Annotated, List
 
 from app.dependencies.database import get_photoscan_service
 from app.services.photoscan import PhotoScanService
-from app.services.detection_service import PhotoScanMLService
-from app.repositories.photoscan import PhotoScanRepository
-from app.core.minio_client import MinIOCLient
 
 
 router = APIRouter(
@@ -37,13 +34,14 @@ async def scan_formation(
     return result
 
 
-@router.post("/scan")
-async def scan_formation(
+@router.post("/scan_list")
+async def scan_list_formation(
+    files: Annotated[list[UploadFile], File(...)],
+    fios: Annotated[list[str] | None, Form()] = None,
     service: PhotoScanService = Depends(get_photoscan_service)
 ):
     """
-    Сканирует бакет эталонов MinIO, находит новые фото, 
-    которых еще нет в PostgreSQL, генерирует по ним 512-мерные 
-    векторы и сохраняет в базу. Повторно старые фото не обрабатывает
+    Принимает файлы и ФИО. Проверяет дубликаты по имени файла в MinIO/Postgres.
+    Грузит новые фото в MinIO, векторизует и сохраняет в БД с ФИО
     """
-    return await service.embedding_formation()
+    return await service.embedding_formation(files, fios)

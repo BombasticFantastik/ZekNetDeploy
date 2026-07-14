@@ -32,15 +32,15 @@ class MinIOCLient:
             s3_client: S3Client = s3
             yield s3_client
         
-    async def put_image(self, bucket: str, data: bytes, content_type="image/jpeg") -> str:
-        file_id = f"{uuid4()}.jpg"
-
+    async def put_image(self, bucket: str, data: bytes, content_type="image/jpeg", file_id: str | None = None) -> str:
+        if not file_id:
+            file_id = f"{uuid4()}.jpg"
         async with self._get_s3_client() as s3:
             await s3.put_object(
                 Bucket=bucket,
                 Key=file_id,
                 Body=data,
-                ContentType=content_type
+                ContentType=content_type,
             )
 
         return file_id

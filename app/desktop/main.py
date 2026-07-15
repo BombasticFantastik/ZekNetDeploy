@@ -7,7 +7,10 @@ from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow,
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot
 import qasync  
+import os
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+img_path = os.path.join(BASE_DIR, "test.jpg")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -54,6 +57,9 @@ class MainWindow(QMainWindow):
     def update_camera(self):
         """Регулярно забирает кадр с камеры и выводит на экран"""
         success, frame = self.camera.read()
+        if not success:
+            frame = cv2.imread(img_path)
+
         if success:
             self.curent_frame = frame
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -65,8 +71,12 @@ class MainWindow(QMainWindow):
     def on_take_photo_clicked(self):
         """Обрабатывает нажатие кнопки «Сделать фото»"""
         if self.curent_frame is None:
-            self.log_output.append("Ошибка: Камера еще не передала ни одного кадра!")
-            return
+            self.log_output.append("Нет кадра — загружаю тестовое изображение")
+            self.curent_frame = cv2.imread(img_path)
+
+            if self.curent_frame is None:
+                self.log_output.append("Ошибка: не удалось загрузить тестовое изображение")
+                return
         
         
         self.take_photo_button.setEnabled(False)

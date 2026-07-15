@@ -3,9 +3,10 @@ import asyncio
 import cv2
 import httpx
 from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, 
-                             QVBoxLayout, QPushButton, QHBoxLayout, QWidget, QTextEdit)
+                             QVBoxLayout, QPushButton, QHBoxLayout, QWidget, QTextEdit,QTableWidget,QTableWidgetItem,QAbstractItemView,QHeaderView)
 from PySide6.QtGui import QPixmap, QImage
-from PySide6.QtCore import QTimer, Slot
+from PySide6.QtCore import QTimer, Slot,Qt,Signal
+
 import qasync  
 import os
 
@@ -13,11 +14,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 img_path = os.path.join(BASE_DIR, "test.jpg")
 
 class MainWindow(QMainWindow):
+    data_changed = Signal(str)
     def __init__(self):
         super().__init__()
         
         self.camera = cv2.VideoCapture(-1)
         self.curent_frame = None
+        self.table_window=None
         
         #http
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60.0)
@@ -37,7 +40,13 @@ class MainWindow(QMainWindow):
 
         #левый layout
         left_layout = QVBoxLayout()
+        to_table_button=QPushButton("Просмотреть посещаемость")
+        to_table_button.clicked.connect(self.show_table_window)
         self.image_label = QLabel("нет сигнала")
+        
+
+        
+        left_layout.addWidget(to_table_button)
         left_layout.addWidget(self.image_label)
 
         #сборка
@@ -93,8 +102,12 @@ class MainWindow(QMainWindow):
         
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
+        #ФЕЙКОВОЕ оповещение таблицы об обновлении
+        self.table_window.update_data('some')
+        
+
     async def send_photo_to_backend(self, image_bytes: bytes):
-        """Асинхронно отправляет байты изображения на твой роут FastAPI"""
+        """Асинхронно отправляет байты изображения на FastAPI"""
         self.log_output.append("Отправка кадра на сервер...")
         
         try:
@@ -109,6 +122,11 @@ class MainWindow(QMainWindow):
                 result_data = response.json()
                 self.log_output.append("Фото успешно обработано!")
                 self.log_output.append(f"Ответ бэкенда:\n{result_data}")
+
+
+                #оповещение таблицы об обновлении
+                if self.table_window!=None:
+                    self.table_window.update_data(result_data)
             else:
                 try:
                     error_detail = response.json()
@@ -129,6 +147,79 @@ class MainWindow(QMainWindow):
         self.camera.release()
         event.accept()
 
+    def show_table_window(self):
+        self.table_window=TableWindow()
+        self.table_window.show()
+        
+
+class TableWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Посещаемость")
+        self.resize(600, 400) 
+
+        
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0) 
+
+        self.table = QTableWidget()
+        self.table.setRowCount(10)
+        self.table.setColumnCount(2)
+        
+        headers = ['ФИО', 'Посещаемость']
+        self.table.setHorizontalHeaderLabels(headers)
+        
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) 
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) #
+        
+        
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        
+        self.table.verticalHeader().setVisible(False)
+        
+        right_layout.addWidget(self.table)
+        #self.update_data()
+
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(10) 
+        
+        close_button = QPushButton("Закрыть окно")
+        close_button.setFixedWidth(120) 
+        close_button.clicked.connect(self.close_this_window)
+        
+        left_layout.addWidget(close_button)
+        left_layout.addStretch() 
+
+
+        
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(15, 15, 15, 15) 
+        main_layout.setSpacing(15) 
+        
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
+
+        self.setLayout(main_layout)
+        
+    def close_this_window(self):
+        self.close()
+
+    def update_data(self,result_data):
+        self.table.clearContents()
+        len_data = 10
+        for i in range(len_data):
+            person_name = QTableWidgetItem(f'Человек_{i}')
+            person_attendance = QTableWidgetItem('Присутствует')
+            
+            person_attendance.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            self.table.setItem(i, 0, person_name)
+            self.table.setItem(i, 1, person_attendance)
+        print(result_data)
+        
 
 if __name__ == "__main__":
     

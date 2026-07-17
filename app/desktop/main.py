@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         
         self.camera = cv2.VideoCapture(-1)
         self.curent_frame = None
-        self.table_window=None
+        self.table_window=TableWindow()
         
         #http
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60.0)
@@ -103,7 +103,8 @@ class MainWindow(QMainWindow):
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
         #ФЕЙКОВОЕ оповещение таблицы об обновлении
-        self.table_window.update_data('some')
+        # if self.table_window!=None:
+        #     self.table_window.update_data(fake_json)
         
 
     async def send_photo_to_backend(self, image_bytes: bytes):
@@ -148,14 +149,14 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def show_table_window(self):
-        self.table_window=TableWindow()
         self.table_window.show()
         
 
 class TableWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Посещаемость")
+        self.setWindowTitle("Присутствующие")
+        self.all_persons=[]
         self.resize(600, 400) 
 
         
@@ -163,10 +164,10 @@ class TableWindow(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0) 
 
         self.table = QTableWidget()
-        self.table.setRowCount(10)
+        self.table.setRowCount(0)
         self.table.setColumnCount(2)
         
-        headers = ['ФИО', 'Посещаемость']
+        headers = ['ФИО', 'Фото']
         self.table.setHorizontalHeaderLabels(headers)
         
         
@@ -193,8 +194,6 @@ class TableWindow(QWidget):
         left_layout.addWidget(close_button)
         left_layout.addStretch() 
 
-
-        
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(15, 15, 15, 15) 
         main_layout.setSpacing(15) 
@@ -207,19 +206,27 @@ class TableWindow(QWidget):
     def close_this_window(self):
         self.close()
 
-    def update_data(self,result_data):
-        self.table.clearContents()
-        len_data = 10
-        for i in range(len_data):
-            person_name = QTableWidgetItem(f'Человек_{i}')
-            person_attendance = QTableWidgetItem('Присутствует')
+    def update_data(self, result_data):
+        #1 фильтруем и добавляем только уникальных пользователей
+        names = [person['matched_person_fio'] for person in self.all_persons]
+        for person in result_data['verified_members']:
+            if person['matched_person_fio'] not in names:
+                self.all_persons.append(person)
+
+        #2 сбрасываем строки таблицы (удаляем старые строки, rowCount становится 0)
+        self.table.setRowCount(0)
+        
+        #3 заполняем таблицу заново
+        for i, person in enumerate(self.all_persons):
+            self.table.insertRow(i) 
             
-            person_attendance.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            person_name = QTableWidgetItem(str(person['matched_person_fio']))
+            person_image = QTableWidgetItem(str(person['cropped_face_storage_path']))
+
+            person_image.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             self.table.setItem(i, 0, person_name)
-            self.table.setItem(i, 1, person_attendance)
-        print(result_data)
-        
+            self.table.setItem(i, 1, person_image)
 
 if __name__ == "__main__":
     

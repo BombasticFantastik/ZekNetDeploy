@@ -22,7 +22,12 @@ class PhotoScanService:
         self.minio = minio
         self.repo = repo
 
-    async def process_formation(self, file_bytes: bytes, filename: str):
+    async def process_formation(
+            self, 
+            file_bytes: bytes, 
+            filename: str, 
+            unit_id: int
+    ):
         detected_faces = self.service.process_raw_image_bytes(file_bytes)
 
         if not detected_faces:
@@ -33,7 +38,11 @@ class PhotoScanService:
                 "verified_members": []
             }
         
-        session = await self.repo.create_session(filename, len(detected_faces))
+        session = await self.repo.create_session(
+            unit_id,
+            filename,
+            len(detected_faces)
+        )
 
         report = []
 
@@ -48,18 +57,43 @@ class PhotoScanService:
 
             matched_rows = await self.repo.find_match(face["embedding"])
 
+            match_distance = None
+            is_verified = False
+            matched_prisoner_id = None
+            matched_photo = None
+            matched_fio = None
+            MATCH_THRESHOLD = 0.6
+
+            matched_rows = await self.repo.find_match(face["embedding"])
+
+            if matched_rows:
+                match_distance = matched_rows["distance"]
+
+                if match_distance <= MATCH_THRESHOLD:
+                    matched_prisoner_id = matched_rows["id"]
+                    matched_photo = matched_rows["photo"]
+                    matched_fio = matched_rows["fio"]
+                    is_verified = True
+
+                else:
+                    matched_prisoner_id = None
+
             await self.repo.create_log(
                 session.id,
-                matched_rows["id"],
+                matched_prisoner_id,
                 face["score"],
                 face["bbox"],
-                cropped_path
+                cropped_path,
+                match_distance,
+                is_verified
             )
 
             report.append({
-                "matched_person_minio_identity": matched_rows["photo"],
-                "matched_person_fio": matched_rows["fio"],
-                "confidence_score": face["score"],
+                "matched": bool(matched_rows),
+                "matched_person_minio_identity": matched_photo,
+                "matched_person_fio": matched_fio,
+                "match_distance": match_distance,
+                "face_detection_score": face["score"],
                 "bbox": face["bbox"],
                 "cropped_face_storage_path": cropped_path,
                 "image_base64": face["image_base64"]
@@ -67,12 +101,7 @@ class PhotoScanService:
 
         await self.repo.commit()
 
-        return {
-            "status": "success",
-            "session_id": session.id,
-            "total_detected_faces": len(detected_faces),
-            "verified_members": report
-        }
+        return session
     
     async def embedding_formation(
             self, 
@@ -149,4 +178,58 @@ class PhotoScanService:
             "status": "success",
             "newly_vectorized_and_saved": processed_count,
             "skipped_duplicates": skipped_count
+        }
+    
+    async def build_report(self, session_id: int):
+        session = await self.repo.get_session_with_details(session_id)
+
+        if not session:
+            raise ValueError("Session not found")
+        
+        found_ids = {
+            log.matched_prisoner_id
+            for log in session.attendance_logs
+            if log.is_verified
+        }
+
+        members = []
+
+        for prisoner in session.unit.prisoners:
+            if prisoner.id in found_ids:
+
+                log = next(
+                    x for x in session.attendance_logs
+                    if x.matched_prisoner_id == prisoner.id
+                )
+
+                if log:
+                    members.append({
+                        "fio": prisoner.fio,
+                        "status": "present",
+                        "confidence": log.face_detection_score,
+                        "distance": log.match_distance,
+                        "etalon_photo": prisoner.photo_minio_path,
+                        "cropped_photo": log.cropped_face_minio_path
+                    })
+
+                else:
+                    members.append({
+                        "fio": "Unnamed",
+                        "status": "Unknown"
+                    })
+
+            else:
+                members.append({
+                    "fio": prisoner.fio,
+                    "status": "missing"
+                })
+
+        return {
+            "session_id": session.id,
+            "unit": {
+                "id": session.unit.id,
+                "name": session.unit.name
+            },
+            "detected_count": session.detected_count,
+            "members": members
         }

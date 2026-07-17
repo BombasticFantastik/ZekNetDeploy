@@ -14,12 +14,24 @@ class AttendanceLog(Base):
         ForeignKey("prisoners_etalons.id", ondelete="SET NULL"),
         nullable=True
     )
-    session_id: Mapped[int] = mapped_column(ForeignKey(
-        "attendance_sessions.id",
-        ondelete="CASCADE"
-    ))
-    confidence: Mapped[float]
-    bbox: Mapped[list[int]] = mapped_column(ARRAY(Integer))
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "attendance_sessions.id",
+            ondelete="CASCADE"
+        ), 
+        nullable=False
+    )
+    face_detection_score: Mapped[float] = mapped_column(
+        nullable=False
+    )
+    match_distance: Mapped[float | None] = mapped_column(
+        nullable=True
+    )
+    is_verified: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False
+    )
+    bbox: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
     cropped_face_minio_path: Mapped[str] = mapped_column(String(512), nullable=False)
 
     session: Mapped["AttendanceSession"] = relationship(

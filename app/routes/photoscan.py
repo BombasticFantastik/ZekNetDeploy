@@ -13,7 +13,8 @@ router = APIRouter(
 
 @router.post("/save_&_scan_&_compare")
 async def scan_formation(
-    file: UploadFile = File(...),
+    file:Annotated[UploadFile, File(...)],
+    unit_id:Annotated[int, Form()],
     service: PhotoScanService = Depends(get_photoscan_service)
 ):
     """
@@ -26,12 +27,15 @@ async def scan_formation(
     """
     file_bytes = await file.read()
     
-    result = await service.process_formation(
+    ml_session = await service.process_formation(
+        unit_id=unit_id,
         file_bytes=file_bytes,
         filename=file.filename
     )
 
-    return result
+    report = await service.build_report(ml_session.id)
+
+    return report
 
 
 @router.post("/scan_list")

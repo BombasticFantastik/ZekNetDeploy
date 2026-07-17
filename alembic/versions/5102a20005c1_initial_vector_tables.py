@@ -70,19 +70,13 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('matched_prisoner_id', sa.Integer(), nullable=True),
         sa.Column('session_id', sa.Integer(), nullable=False),
-        sa.Column('confidence', sa.Float(), nullable=False),
+        sa.Column('face_detection_score', sa.Float(), nullable=False),
+        sa.Column('match_distance', sa.Float(), nullable=True),
+        sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column('bbox', sa.ARRAY(sa.Integer()), nullable=False),
         sa.Column('cropped_face_minio_path', sa.String(length=512), nullable=False),
-        sa.ForeignKeyConstraint(
-            ['matched_prisoner_id'],
-            ['prisoners_etalons.id'],
-            ondelete='SET NULL'
-        ),
-        sa.ForeignKeyConstraint(
-            ['session_id'],
-            ['attendance_sessions.id'],
-            ondelete='CASCADE'
-        ),
+        sa.ForeignKeyConstraint(['matched_prisoner_id'], ['prisoners_etalons.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['session_id'], ['attendance_sessions.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
 

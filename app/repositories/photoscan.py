@@ -72,11 +72,18 @@ class PhotoScanRepository:
 
         return set(result.all())
     
-    def create_etalon(self, photo_path: str, embedding: list[float], fio: str | None = None):
+    def create_etalon(
+            self, 
+            photo_path: str, 
+            embedding: list[float],  
+            unit_id: int, 
+            fio: str | None = None
+    ):
         etalon = PrisonerEtalon(
             photo_minio_path=photo_path,
             face_embedding=embedding,
-            fio=fio
+            fio=fio,
+            unit_id=unit_id
         )
 
         self.db.add(etalon)

@@ -4,7 +4,6 @@ from app.repositories.photoscan import PhotoScanRepository
 from app.services.embedding_service import EmbeddingMLService
 
 from uuid import uuid4
-import itertools
 from fastapi import UploadFile
 
 from app.core.config import settings
@@ -75,7 +74,15 @@ class PhotoScanService:
             "verified_members": report
         }
     
-    async def embedding_formation(self, files: list[UploadFile], fios: list[str]):
+    async def embedding_formation(
+            self, 
+            files: list[UploadFile], 
+            fios: list[str], 
+            unit_ids: list[int]
+    ):
+        if not (len(files) == len(fios) == len(unit_ids)):
+            raise ValueError("files, fios and unit_ids must have same length")
+        
         DUPLICATE_THRESHOLD = 0.6
 
         processed_count = 0
@@ -89,8 +96,13 @@ class PhotoScanService:
             }
         
         fios_list = fios if fios is not None else []
+        unit_ids_list = unit_ids if unit_ids is not None else []
 
-        for file, fio in itertools.zip_longest(files, fios_list, fillvalue=None):
+        for file, fio, unit_id in zip(
+            files, 
+            fios_list,
+            unit_ids_list
+        ):
             if file is None or not file.filename:
                 continue
 
@@ -124,7 +136,8 @@ class PhotoScanService:
             self.repo.create_etalon(
                 photo_path=unique_filename,
                 embedding=embedding,
-                fio=fio
+                fio=fio,
+                unit_id=unit_id
             )
 
             processed_count += 1

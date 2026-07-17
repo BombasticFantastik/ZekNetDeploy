@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from typing import Annotated, List
 
-from app.dependencies.database import get_photoscan_service
+from app.dependencies.photoscan import get_photoscan_service
 from app.services.photoscan import PhotoScanService
 
 
@@ -37,11 +37,12 @@ async def scan_formation(
 @router.post("/scan_list")
 async def scan_list_formation(
     files: Annotated[list[UploadFile], File(...)],
-    fios: Annotated[list[str] | None, Form()] = None,
+    fios: Annotated[list[str] | None, Form()],
+    unit_id: Annotated[list[int], Form()],
     service: PhotoScanService = Depends(get_photoscan_service)
 ):
     """
     Принимает файлы и ФИО. Проверяет дубликаты по имени файла в MinIO/Postgres.
     Грузит новые фото в MinIO, векторизует и сохраняет в БД с ФИО
     """
-    return await service.embedding_formation(files, fios)
+    return await service.embedding_formation(files, fios, unit_id)

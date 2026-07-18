@@ -2,16 +2,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db_models.attendance_sessions import AttendanceSession
 from app.db_models.attendance_logs import AttendanceLog
-from app.db_models.prisoners_etalons import PrisonerEtalon
+from app.db_models.prisoners_etalons import PrisonerEtalon, Unit
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 class PhotoScanRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_session(self, snapshot_path, detected_count):
+    async def create_session(self, unit_id, snapshot_path, detected_count):
         session = AttendanceSession(
+            unit_id=unit_id,
             snapshot_minio_path=snapshot_path,
             detected_count=detected_count
         )
@@ -21,7 +23,7 @@ class PhotoScanRepository:
         return session
     
     async def find_match(self, embedding):
-        distance = PrisonerEtalon.face_embedding.l2_distance(embedding)
+        distance = PrisonerEtalon.face_embedding.cosine_distance(embedding)
 
         result = await self.db.execute(
             select(
@@ -50,16 +52,20 @@ class PhotoScanRepository:
         self,
         session_id,
         matched_prisoner_id,
-        confidence,
+        face_detection_score,
         bbox,
-        cropped_face_minio_path
+        cropped_face_minio_path,
+        match_distance,
+        is_verified
     ):
         log = AttendanceLog(
             session_id=session_id,
             matched_prisoner_id=matched_prisoner_id,
-            confidence=confidence,
+            face_detection_score=face_detection_score,
             bbox=bbox,
-            cropped_face_minio_path=cropped_face_minio_path
+            cropped_face_minio_path=cropped_face_minio_path,
+            match_distance=match_distance,
+            is_verified=is_verified
         )
 
         self.db.add(log)
@@ -72,14 +78,36 @@ class PhotoScanRepository:
 
         return set(result.all())
     
-    def create_etalon(self, photo_path: str, embedding: list[float], fio: str | None = None):
+    def create_etalon(
+            self, 
+            photo_path: str, 
+            embedding: list[float],  
+            unit_id: int, 
+            fio: str | None = None
+    ):
         etalon = PrisonerEtalon(
             photo_minio_path=photo_path,
             face_embedding=embedding,
-            fio=fio
+            fio=fio,
+            unit_id=unit_id
         )
 
         self.db.add(etalon)
 
     async def commit(self):
         await self.db.commit()
+
+    # Вынести отдельно репозиторий создания отчета
+    async def get_session_with_details(self, session_id:int):
+        result = await self.db.execute(
+            select(AttendanceSession)
+            .where(AttendanceSession.id == session_id)
+            .options(
+                selectinload(AttendanceSession.unit)
+                .selectinload(Unit.prisoners),
+                selectinload(AttendanceSession.attendance_logs)
+                .selectinload(AttendanceLog.matched_prisoner)
+            )
+        )
+
+        return result.scalar_one_or_none()

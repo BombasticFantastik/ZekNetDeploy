@@ -4,7 +4,6 @@ from app.repositories.photoscan import PhotoScanRepository
 from app.services.embedding_service import EmbeddingMLService
 
 from uuid import uuid4
-import itertools
 from fastapi import UploadFile
 
 from app.core.config import settings
@@ -23,7 +22,12 @@ class PhotoScanService:
         self.minio = minio
         self.repo = repo
 
-    async def process_formation(self, file_bytes: bytes, filename: str):
+    async def process_formation(
+            self, 
+            file_bytes: bytes, 
+            filename: str, 
+            unit_id: int
+    ):
         detected_faces = self.service.process_raw_image_bytes(file_bytes)
 
         if not detected_faces:
@@ -34,7 +38,11 @@ class PhotoScanService:
                 "verified_members": []
             }
         
-        session = await self.repo.create_session(filename, len(detected_faces))
+        session = await self.repo.create_session(
+            unit_id,
+            filename,
+            len(detected_faces)
+        )
 
         report = []
 
@@ -49,18 +57,43 @@ class PhotoScanService:
 
             matched_rows = await self.repo.find_match(face["embedding"])
 
+            match_distance = None
+            is_verified = False
+            matched_prisoner_id = None
+            matched_photo = None
+            matched_fio = None
+            MATCH_THRESHOLD = 0.6
+
+            matched_rows = await self.repo.find_match(face["embedding"])
+
+            if matched_rows:
+                match_distance = matched_rows["distance"]
+
+                if match_distance <= MATCH_THRESHOLD:
+                    matched_prisoner_id = matched_rows["id"]
+                    matched_photo = matched_rows["photo"]
+                    matched_fio = matched_rows["fio"]
+                    is_verified = True
+
+                else:
+                    matched_prisoner_id = None
+
             await self.repo.create_log(
                 session.id,
-                matched_rows["id"],
+                matched_prisoner_id,
                 face["score"],
                 face["bbox"],
-                cropped_path
+                cropped_path,
+                match_distance,
+                is_verified
             )
 
             report.append({
-                "matched_person_minio_identity": matched_rows["photo"],
-                "matched_person_fio": matched_rows["fio"],
-                "confidence_score": face["score"],
+                "matched": bool(matched_rows),
+                "matched_person_minio_identity": matched_photo,
+                "matched_person_fio": matched_fio,
+                "match_distance": match_distance,
+                "face_detection_score": face["score"],
                 "bbox": face["bbox"],
                 "cropped_face_storage_path": cropped_path,
                 "image_base64": face["image_base64"]
@@ -68,14 +101,17 @@ class PhotoScanService:
 
         await self.repo.commit()
 
-        return {
-            "status": "success",
-            "session_id": session.id,
-            "total_detected_faces": len(detected_faces),
-            "verified_members": report
-        }
+        return session
     
-    async def embedding_formation(self, files: list[UploadFile], fios: list[str]):
+    async def embedding_formation(
+            self, 
+            files: list[UploadFile], 
+            fios: list[str], 
+            unit_ids: list[int]
+    ):
+        if not (len(files) == len(fios) == len(unit_ids)):
+            raise ValueError("files, fios and unit_ids must have same length")
+        
         DUPLICATE_THRESHOLD = 0.6
 
         processed_count = 0
@@ -89,8 +125,13 @@ class PhotoScanService:
             }
         
         fios_list = fios if fios is not None else []
+        unit_ids_list = unit_ids if unit_ids is not None else []
 
-        for file, fio in itertools.zip_longest(files, fios_list, fillvalue=None):
+        for file, fio, unit_id in zip(
+            files, 
+            fios_list,
+            unit_ids_list
+        ):
             if file is None or not file.filename:
                 continue
 
@@ -124,7 +165,8 @@ class PhotoScanService:
             self.repo.create_etalon(
                 photo_path=unique_filename,
                 embedding=embedding,
-                fio=fio
+                fio=fio,
+                unit_id=unit_id
             )
 
             processed_count += 1
@@ -136,4 +178,83 @@ class PhotoScanService:
             "status": "success",
             "newly_vectorized_and_saved": processed_count,
             "skipped_duplicates": skipped_count
+        }
+    
+    async def build_report(self, session_id: int):
+        session = await self.repo.get_session_with_details(session_id)
+
+        if not session:
+            raise ValueError("Session not found")
+        
+        found_ids = {
+            log.matched_prisoner_id: log
+            for log in session.attendance_logs
+            if log.is_verified
+        }
+
+        members = []
+        unkmembers = []
+
+        for prisoner in session.unit.prisoners:
+            log = found_ids.get(prisoner.id)
+
+            if log:
+                status = "present"
+                members.append({
+                    "fio": prisoner.fio,
+                    "status": status,
+                    "confidence": log.face_detection_score,
+                    "distance": log.match_distance,
+                    "etalon_photo": prisoner.photo_minio_path,
+                    "cropped_photo": log.cropped_face_minio_path
+                })
+
+            else:
+                status = "absent"
+                members.append({
+                    "fio": prisoner.fio,
+                    "status": "absent",
+                    "confidence": None,
+                    "distance": None,
+                    "etalon_photo": prisoner.photo_minio_path,
+                    "cropped_photo": None
+                })
+
+        for log in session.attendance_logs:
+            if log.matched_prisoner_id is None:
+                status = "unknown"
+                fio = None
+
+                unkmembers.append({
+                    "fio": fio,
+                    "status": status,
+                    "confidence": log.face_detection_score,
+                    "distance": None,
+                    "etalon_photo": None,
+                    "cropped_photo": log.cropped_face_minio_path
+                })
+
+        expected_count = len(session.unit.prisoners)
+        present_count = len(found_ids)
+        absent_count = expected_count - present_count
+        unknown_count = len(unkmembers)
+
+        return {
+            "session_id": session.id,
+
+            "unit": {
+                "id": session.unit.id,
+                "name": session.unit.name
+            },
+
+            "summary": {
+                "expected": expected_count,
+                "present": present_count,
+                "absent": absent_count,
+                "unknown": unknown_count,
+                "detected_total": session.detected_count
+            },
+
+            "expected_members": members,
+            "unexpected_members": unkmembers
         }

@@ -187,49 +187,74 @@ class PhotoScanService:
             raise ValueError("Session not found")
         
         found_ids = {
-            log.matched_prisoner_id
+            log.matched_prisoner_id: log
             for log in session.attendance_logs
             if log.is_verified
         }
 
         members = []
+        unkmembers = []
 
         for prisoner in session.unit.prisoners:
-            if prisoner.id in found_ids:
+            log = found_ids.get(prisoner.id)
 
-                log = next(
-                    x for x in session.attendance_logs
-                    if x.matched_prisoner_id == prisoner.id
-                )
-
-                if log:
-                    members.append({
-                        "fio": prisoner.fio,
-                        "status": "present",
-                        "confidence": log.face_detection_score,
-                        "distance": log.match_distance,
-                        "etalon_photo": prisoner.photo_minio_path,
-                        "cropped_photo": log.cropped_face_minio_path
-                    })
-
-                else:
-                    members.append({
-                        "fio": "Unnamed",
-                        "status": "Unknown"
-                    })
-
-            else:
+            if log:
+                status = "present"
                 members.append({
                     "fio": prisoner.fio,
-                    "status": "missing"
+                    "status": status,
+                    "confidence": log.face_detection_score,
+                    "distance": log.match_distance,
+                    "etalon_photo": prisoner.photo_minio_path,
+                    "cropped_photo": log.cropped_face_minio_path
                 })
+
+            else:
+                status = "absent"
+                members.append({
+                    "fio": prisoner.fio,
+                    "status": "absent",
+                    "confidence": None,
+                    "distance": None,
+                    "etalon_photo": prisoner.photo_minio_path,
+                    "cropped_photo": None
+                })
+
+        for log in session.attendance_logs:
+            if log.matched_prisoner_id is None:
+                status = "unknown"
+                fio = None
+
+                unkmembers.append({
+                    "fio": fio,
+                    "status": status,
+                    "confidence": log.face_detection_score,
+                    "distance": None,
+                    "etalon_photo": None,
+                    "cropped_photo": log.cropped_face_minio_path
+                })
+
+        expected_count = len(session.unit.prisoners)
+        present_count = len(found_ids)
+        absent_count = expected_count - present_count
+        unknown_count = len(unkmembers)
 
         return {
             "session_id": session.id,
+
             "unit": {
                 "id": session.unit.id,
                 "name": session.unit.name
             },
-            "detected_count": session.detected_count,
-            "members": members
+
+            "summary": {
+                "expected": expected_count,
+                "present": present_count,
+                "absent": absent_count,
+                "unknown": unknown_count,
+                "detected_total": session.detected_count
+            },
+
+            "expected_members": members,
+            "unexpected_members": unkmembers
         }

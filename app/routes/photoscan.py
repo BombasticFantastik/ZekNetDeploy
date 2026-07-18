@@ -11,11 +11,11 @@ router = APIRouter(
 )
 
 
-@router.post("/save_&_scan_&_compare")
+@router.post("/scan_save_report")
 async def scan_formation(
-    file:Annotated[UploadFile, File(...)],
-    unit_id:Annotated[int, Form()],
-    service: PhotoScanService = Depends(get_photoscan_service)
+    file: Annotated[UploadFile, File(...)],
+    unit_id: Annotated[int, Form()],
+    service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
 ):
     """
     Принимает общее фото взвода
@@ -36,6 +36,14 @@ async def scan_formation(
     report = await service.build_report(ml_session.id)
 
     return report
+
+
+@router.get("/report")
+async def build_report(
+    ml_session_id: int, 
+    service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
+):
+    return await service.build_report(ml_session_id)
 
 
 @router.post("/scan_list")

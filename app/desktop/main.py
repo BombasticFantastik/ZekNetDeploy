@@ -6,9 +6,15 @@ from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow,
                              QVBoxLayout, QPushButton, QHBoxLayout, QWidget, QTextEdit,QTableWidget,QTableWidgetItem,QAbstractItemView,QHeaderView)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot,Qt,Signal
+#from photoloader import PhotoLoader
 
 import qasync  
 import os
+#from test import fake_json
+
+
+
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 img_path = os.path.join(BASE_DIR, "test.jpg")
@@ -103,8 +109,8 @@ class MainWindow(QMainWindow):
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
         #ФЕЙКОВОЕ оповещение таблицы об обновлении
-        # if self.table_window!=None:
-        #     self.table_window.update_data(fake_json)
+        #if self.table_window!=None:
+        #    self.table_window.update_data(fake_json)
         
 
     async def send_photo_to_backend(self, image_bytes: bytes):
@@ -151,38 +157,38 @@ class MainWindow(QMainWindow):
     def show_table_window(self):
         self.table_window.show()
         
-
 class TableWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Присутствующие")
-        self.all_persons=[]
-        self.resize(600, 400) 
-
+        self.all_persons = []
+        self.resize(1200, 800) 
         
+        self.BASE_IMAGE_URL = "http://127.0.0.1:8000/static/"
+        self.client = httpx.AsyncClient(timeout=10.0)
+
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0) 
 
         self.table = QTableWidget()
         self.table.setRowCount(0)
-        self.table.setColumnCount(2)
+        self.table.setColumnCount(4)
         
-        headers = ['ФИО', 'Фото']
+        headers = ['ФИО', 'Лицо на фото', "Фото в базе", "Дистанция"]
         self.table.setHorizontalHeaderLabels(headers)
-        
         
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) 
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) #
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         
+        self.table.verticalHeader().setDefaultSectionSize(75)
+        self.table.verticalHeader().setVisible(False)
         
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         
-        self.table.verticalHeader().setVisible(False)
-        
         right_layout.addWidget(self.table)
-        #self.update_data()
 
         left_layout = QVBoxLayout()
         left_layout.setSpacing(10) 
@@ -207,26 +213,71 @@ class TableWindow(QWidget):
         self.close()
 
     def update_data(self, result_data):
-        #1 фильтруем и добавляем только уникальных пользователей
-        names = [person['matched_person_fio'] for person in self.all_persons]
-        for person in result_data['verified_members']:
-            if person['matched_person_fio'] not in names:
+        # 1. Фильтруем и добавляем только уникальных
+        names = [person['fio'] for person in self.all_persons]
+        for person in result_data.get('expected_members', []):
+            if person['fio'] not in names:
                 self.all_persons.append(person)
 
-        #2 сбрасываем строки таблицы (удаляем старые строки, rowCount становится 0)
+        photos=[person['cropped_photo'] for person in self.all_persons]
+        for person in result_data.get('unexpected_members', []):
+            if person['cropped_photo'] not in photos:
+                self.all_persons.append(person)
+
+        # 2. Сбрасываем строки таблицы
         self.table.setRowCount(0)
         
-        #3 заполняем таблицу заново
+        # 3. Заполняем таблицу заново
         for i, person in enumerate(self.all_persons):
             self.table.insertRow(i) 
             
-            person_name = QTableWidgetItem(str(person['matched_person_fio']))
-            person_image = QTableWidgetItem(str(person['cropped_face_storage_path']))
-
-            person_image.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            
+            #фио
+            person_name = QTableWidgetItem(str(person['fio']))
             self.table.setItem(i, 0, person_name)
-            self.table.setItem(i, 1, person_image)
+            
+            #фото лица
+            label_cropped = QLabel("Загрузка...")
+            label_cropped.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setCellWidget(i, 1, label_cropped)
+            
+            #шаблон лица
+            label_etalon = QLabel("Загрузка...")
+            label_etalon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setCellWidget(i, 2, label_etalon)
+            
+            #дистанция
+            
+            person_distance = QTableWidgetItem(f"{person['distance']:}"[:5])
+            self.table.setItem(i, 3, person_distance)
+
+            url_cropped = f"{self.BASE_IMAGE_URL}{person['cropped_photo']}"
+            url_etalon = f"{self.BASE_IMAGE_URL}{person['etalon_photo']}"
+            
+            asyncio.ensure_future(self.fetch_and_render_image(url_cropped, label_cropped))
+            asyncio.ensure_future(self.fetch_and_render_image(url_etalon, label_etalon))
+
+    async def fetch_and_render_image(self, url: str, target_label: QLabel):
+        """Асинхронно скачивает картинку через httpx и вставляет в QLabel ячейки"""
+        try:
+            response = await self.client.get(url)
+            if response.status_code == 200:
+                pixmap = QPixmap()
+                pixmap.loadFromData(response.content)
+                
+                if not pixmap.isNull():
+                    # Красиво сжимаем под размер ячейки таблицы
+                    scaled = pixmap.scaled(70, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    target_label.setPixmap(scaled)
+                else:
+                    target_label.setText("Ошибка формата")
+            else:
+                target_label.setText(f"ошибка {response.status_code}")
+        except Exception as e:
+            target_label.setText("Ошибка сети")
+
+    def closeEvent(self, event):
+        asyncio.ensure_future(self.client.aclose())
+        event.accept()
 
 if __name__ == "__main__":
     

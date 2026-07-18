@@ -12,10 +12,6 @@ import qasync
 import os
 #from test import fake_json
 
-
-
-
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 img_path = os.path.join(BASE_DIR, "test.jpg")
 
@@ -109,8 +105,8 @@ class MainWindow(QMainWindow):
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
         #ФЕЙКОВОЕ оповещение таблицы об обновлении
-        #if self.table_window!=None:
-        #    self.table_window.update_data(fake_json)
+        # if self.table_window!=None:
+        #     self.table_window.update_data(fake_json)
         
 
     async def send_photo_to_backend(self, image_bytes: bytes):
@@ -172,9 +168,9 @@ class TableWindow(QWidget):
 
         self.table = QTableWidget()
         self.table.setRowCount(0)
-        self.table.setColumnCount(4)
+        self.table.setColumnCount(5)
         
-        headers = ['ФИО', 'Лицо на фото', "Фото в базе", "Дистанция"]
+        headers = ['ФИО', 'Лицо на фото', "Фото в базе", "Дистанция","Статус"]
         self.table.setHorizontalHeaderLabels(headers)
         
         header = self.table.horizontalHeader()
@@ -246,9 +242,12 @@ class TableWindow(QWidget):
             self.table.setCellWidget(i, 2, label_etalon)
             
             #дистанция
-            
             person_distance = QTableWidgetItem(f"{person['distance']:}"[:5])
             self.table.setItem(i, 3, person_distance)
+
+            #статус
+            person_status=QTableWidgetItem(f"{person['status']:}")
+            self.table.setItem(i, 4, person_status)
 
             url_cropped = f"{self.BASE_IMAGE_URL}{person['cropped_photo']}"
             url_etalon = f"{self.BASE_IMAGE_URL}{person['etalon_photo']}"

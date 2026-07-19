@@ -3,7 +3,7 @@ import asyncio
 import cv2
 import httpx
 from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, 
-                             QVBoxLayout, QPushButton, QHBoxLayout, QWidget, QTextEdit,QTableWidget,QTableWidgetItem,QAbstractItemView,QHeaderView)
+                             QVBoxLayout, QPushButton, QHBoxLayout, QWidget, QTextEdit,QTableWidget,QTableWidgetItem,QAbstractItemView,QHeaderView,QLineEdit)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot,Qt,Signal
 #from photoloader import PhotoLoader
@@ -22,7 +22,8 @@ class MainWindow(QMainWindow):
         
         self.camera = cv2.VideoCapture(-1)
         self.curent_frame = None
-        self.table_window=TableWindow()
+        self.attendance_table_window=AttendanceTableWindow()
+        self.units_table_window=UnitsTableWindow()
         
         #http
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60.0)
@@ -42,13 +43,18 @@ class MainWindow(QMainWindow):
 
         #левый layout
         left_layout = QVBoxLayout()
-        to_table_button=QPushButton("Просмотреть посещаемость")
-        to_table_button.clicked.connect(self.show_table_window)
+        to_attendance_table_button=QPushButton("Просмотреть посещаемость")
+        to_attendance_table_button.clicked.connect(self.show_attendance_table_window)
+
+        to_units_table_button=QPushButton("Просмотреть отряды")
+        to_units_table_button.clicked.connect(self.show_units_table_window)
+
         self.image_label = QLabel("нет сигнала")
         
 
         
-        left_layout.addWidget(to_table_button)
+        left_layout.addWidget(to_attendance_table_button)
+        left_layout.addWidget(to_units_table_button)
         left_layout.addWidget(self.image_label)
 
         #сборка
@@ -91,7 +97,7 @@ class MainWindow(QMainWindow):
         
         
         self.take_photo_button.setEnabled(False)
-        self.log_output.append("Кодирование изображения...")
+        #self.log_output.append("Кодирование изображения...")
         
         #в jpeg
         success, encoded_image = cv2.imencode('.jpg', self.curent_frame)
@@ -105,8 +111,9 @@ class MainWindow(QMainWindow):
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
         #ФЕЙКОВОЕ оповещение таблицы об обновлении
-        # if self.table_window!=None:
-        #     self.table_window.update_data(fake_json)
+        # if self.attendance_table_window!=None:
+        #     self.attendance_table_window.update_data(fake_json)
+        #     self.log_unit_info(fake_json)
         
 
     async def send_photo_to_backend(self, image_bytes: bytes):
@@ -123,13 +130,14 @@ class MainWindow(QMainWindow):
             
             if response.status_code == 200:
                 result_data = response.json()
-                self.log_output.append("Фото успешно обработано!")
-                self.log_output.append(f"Ответ бэкенда:\n{result_data}")
+                #self.log_output.append("Фото успешно обработано!")
+                #self.log_output.append(f"Ответ бэкенда:\n{result_data}")
 
 
                 #оповещение таблицы об обновлении
-                if self.table_window!=None:
-                    self.table_window.update_data(result_data)
+                if self.attendance_table_window!=None:
+                    self.attendance_table_window.update_data(result_data)
+                    self.log_unit_info(result_data)
             else:
                 try:
                     error_detail = response.json()
@@ -150,10 +158,25 @@ class MainWindow(QMainWindow):
         self.camera.release()
         event.accept()
 
-    def show_table_window(self):
-        self.table_window.show()
+    def log_unit_info(self,result_data):
+        self.log_output.append('______')
+        self.log_output.append(f'Вывод информации о взводе "{result_data["unit"]["name"]}":')
+        self.log_output.append(f'Ожидалось {result_data["summary"]["expected"]} людей')
+        self.log_output.append(f'Присутствуют {result_data["summary"]["present"]} людей')
+        self.log_output.append(f'Отсутствуют {result_data["summary"]["present"]} людей')
+        self.log_output.append("")
+        self.log_output.append(f'На фото присутсвует {result_data["summary"]["detected_total"]} человек')
+        self.log_output.append(f'Среди них {result_data["summary"]["unknown"]} неизвестных людей')
+        self.log_output.append('______')
+
+    def show_attendance_table_window(self):
+        self.attendance_table_window.show()
+    def show_units_table_window(self):
+        self.units_table_window.show()
+
         
-class TableWindow(QWidget):
+
+class AttendanceTableWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Присутствующие")
@@ -278,6 +301,122 @@ class TableWindow(QWidget):
         asyncio.ensure_future(self.client.aclose())
         event.accept()
 
+class UnitsTableWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Отряды")
+        self.all_persons = []
+        self.resize(1200, 800) 
+        
+        #self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=10.0)
+
+        #правый layout
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0) 
+
+        self.table = QTableWidget()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(2)
+        
+        headers = ['Id', 'Название отряда']
+        self.table.setHorizontalHeaderLabels(headers)
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) 
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        
+        self.table.verticalHeader().setDefaultSectionSize(75)
+        self.table.verticalHeader().setVisible(False)
+        
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        
+        right_layout.addWidget(self.table)
+
+        #левый layout
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(10) 
+        
+        # Форма создания нового отряда
+        self.unit_name_input = QLineEdit()
+        self.unit_name_input.setPlaceholderText("Имя нового отряда...")
+        self.unit_name_input.setFixedWidth(150)
+        
+        create_button = QPushButton("Создать отряд")
+        create_button.setFixedWidth(150)
+        create_button.clicked.connect(self.create_new_unit)
+        
+        left_layout.addWidget(self.unit_name_input)
+        left_layout.addWidget(create_button)
+        left_layout.addSpacing(20)  # Визуальный отступ
+        
+        # Кнопка закрытия
+        close_button = QPushButton("Закрыть окно")
+        close_button.setFixedWidth(120) 
+        close_button.clicked.connect(self.close_this_window)
+        
+        left_layout.addWidget(close_button)
+        left_layout.addStretch() 
+
+        # Главный контейнер
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(15, 15, 15, 15) 
+        main_layout.setSpacing(15) 
+        
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
+
+        self.setLayout(main_layout)
+        
+    def close_this_window(self):
+        self.close()
+
+    def create_new_unit(self):
+        """Слот кнопки: валидирует ввод и запускает асинхронный POST"""
+        name = self.unit_name_input.text().strip()
+        if not name:
+            return
+            
+        asyncio.ensure_future(self.send_create_request(name))
+
+    async def send_create_request(self, name):
+        """Отправка POST-запроса на создание отряда"""
+        url_path = "/api/v1/unit_creator/"
+        try:
+            response = await self.client.post(url_path, json={"name": name})
+            if response.status_code in (200, 201):
+                self.unit_name_input.clear()
+                await self.update_data() #обновление таблицы
+            else:
+                print(f"Ошибка бэкенда при создании: {response.status_code}")
+        except Exception as e:
+            print(f"Ошибка сети/запроса при создании: {e}")
+
+    async def update_data(self, result_data=None):
+        """Асинхронное получение данных и заполнение таблицы"""
+        url_path = "/api/v1/unit_creator/"
+        try:
+            response = await self.client.get(url_path)
+            result_data = response.json()
+
+            self.table.setRowCount(0)
+            for i, unit in enumerate(result_data.get('units', [])):
+                self.table.insertRow(i) 
+                
+                # id
+                person_name = QTableWidgetItem(str(unit['id']))
+                self.table.setItem(i, 0, person_name)
+                            
+                # имя
+                person_distance = QTableWidgetItem(f"{unit['name']}")
+                self.table.setItem(i, 1, person_distance)
+        except Exception as e:
+            print(f"Ошибка при обновлении таблицы: {e}")
+
+    def closeEvent(self, event):
+        asyncio.ensure_future(self.client.aclose())
+        event.accept()
 if __name__ == "__main__":
     
     app = QApplication(sys.argv)

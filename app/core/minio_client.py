@@ -60,3 +60,7 @@ class MinIOCLient:
                         file_keys.append(obj["Key"])
 
         return file_keys
+    
+    async def delete_image(self, bucket: str, file_id: str) -> None:
+        async with self._get_s3_client() as s3:
+            await s3.delete_object(Bucket=bucket, Key=file_id)

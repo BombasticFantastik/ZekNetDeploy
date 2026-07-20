@@ -43,14 +43,22 @@ class PhotoScanRepository:
         row = result.first()
 
         if row:
+            print(
+                "MATCH:",
+                row[2],
+                "DISTANCE:",
+                row[3]
+            )
             return {
                     "id": row[0],
                     "photo": row[1],
                     "fio": row[2],
                     "distance": row[3]
             }
-
-        return None
+        
+        else:
+            print("NO ETALONS")
+            return None
     
     async def create_log(
         self,

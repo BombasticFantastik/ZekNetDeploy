@@ -24,8 +24,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.camera = cv2.VideoCapture(-1)
-        self.curent_frame = None
+        self.camera = None
+        self.curent_frame = cv2.imread(img_path)
+        self.current_unit_id = 1
         self.attendance_table_window=AttendanceTableWindow()
         self.units_table_window=UnitsTableWindow()
         self.users_table_window=UsersTableWindow()
@@ -82,16 +83,31 @@ class MainWindow(QMainWindow):
 
     def update_camera(self):
         """Регулярно забирает кадр с камеры и выводит на экран"""
-        success, frame = self.camera.read()
+
+        # success, frame = self.camera.read()
+        success = None
+
         if not success:
             frame = cv2.imread(img_path)
 
-        if success:
-            self.curent_frame = frame
-            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, c = rgb_image.shape
-            qt_image = QImage(rgb_image.data, w, h, c * w, QImage.Format_RGB888)
-            self.image_label.setPixmap(QPixmap.fromImage(qt_image))
+            if frame is None:
+                self.log_output.append("Ошибка: тестовое изображение не найдено")
+                return
+
+        self.curent_frame = frame
+
+        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, c = rgb_image.shape
+
+        qt_image = QImage(
+            rgb_image.data,
+            w,
+            h,
+            c * w,
+            QImage.Format_RGB888
+        )
+
+        self.image_label.setPixmap(QPixmap.fromImage(qt_image))
 
     @Slot()
     def on_take_photo_clicked(self):
@@ -127,35 +143,64 @@ class MainWindow(QMainWindow):
 
     async def send_photo_to_backend(self, image_bytes: bytes):
         """Асинхронно отправляет байты изображения на FastAPI"""
+
         self.log_output.append("Отправка кадра на сервер...")
-        
+
         try:
             files = {
-                "file": ("webcam_shot.jpg", image_bytes, "image/jpeg")
+                "file": (
+                    "webcam_shot.jpg",
+                    image_bytes,
+                    "image/jpeg"
+                )
             }
-            
-            url_path = "/api/v1/photoscan/save_&_scan_&_compare"
-            response = await self.client.post(url_path, files=files)
-            
+
+            data = {
+                "unit_id": str(self.current_unit_id)
+            }
+
+            with open("gui_test.jpg", "wb") as f:
+                f.write(image_bytes)
+            self.log_output.append(
+                f"Отправляю unit_id={self.current_unit_id}"
+            )
+
+            response = await self.client.post(
+                "/api/v1/photoscan/scan_save_report",
+                files=files,
+                data=data
+            )
+
             if response.status_code == 200:
                 result_data = response.json()
-                #self.log_output.append("Фото успешно обработано!")
-                #self.log_output.append(f"Ответ бэкенда:\n{result_data}")
+                print(result_data["summary"])
+                print(result_data["expected_members"])
 
-
-                #оповещение таблицы об обновлении
-                if self.attendance_table_window!=None:
+                if self.attendance_table_window is not None:
                     self.attendance_table_window.update_data(result_data)
-                    self.log_unit_info(result_data)
+
+                self.log_unit_info(result_data)
+
             else:
                 try:
                     error_detail = response.json()
                 except Exception:
                     error_detail = response.text
-                self.log_output.append(f"ошибка бэкенда [{response.status_code}]: {error_detail}")
-                
+
+                self.log_output.append(
+                    f"Ошибка бэкенда [{response.status_code}]: {error_detail}"
+                )
+
         except httpx.RequestError as exc:
-            self.log_output.append(f"ошибка сети при связи с бэкендом: {exc}")
+            self.log_output.append(
+                f"Ошибка сети при связи с бэкендом: {exc}"
+            )
+
+        except Exception as exc:
+            self.log_output.append(
+                f"Ошибка обработки: {exc}"
+            )
+
         finally:
             self.take_photo_button.setEnabled(True)
 
@@ -172,7 +217,7 @@ class MainWindow(QMainWindow):
         self.log_output.append(f'Вывод информации о взводе "{result_data["unit"]["name"]}":')
         self.log_output.append(f'Ожидалось {result_data["summary"]["expected"]} людей')
         self.log_output.append(f'Присутствуют {result_data["summary"]["present"]} людей')
-        self.log_output.append(f'Отсутствуют {result_data["summary"]["present"]} людей')
+        self.log_output.append(f'Отсутствуют {result_data["summary"]["absent"]} людей')
         self.log_output.append("")
         self.log_output.append(f'На фото присутсвует {result_data["summary"]["detected_total"]} человек')
         self.log_output.append(f'Среди них {result_data["summary"]["unknown"]} неизвестных людей')
@@ -192,7 +237,7 @@ class AttendanceTableWindow(QWidget):
         self.all_persons = []
         self.resize(1200, 800) 
         
-        self.BASE_IMAGE_URL = "http://127.0.0.1:8000/static/"
+        self.BASE_IMAGE_URL = "http://127.0.0.1:8000/api/v1/bucket_loader/image/"
         self.client = httpx.AsyncClient(timeout=10.0)
 
         right_layout = QVBoxLayout()
@@ -241,51 +286,103 @@ class AttendanceTableWindow(QWidget):
         self.close()
 
     def update_data(self, result_data):
-        # 1. Фильтруем и добавляем только уникальных
-        names = [person['fio'] for person in self.all_persons]
-        for person in result_data.get('expected_members', []):
-            if person['fio'] not in names:
-                self.all_persons.append(person)
+        def get_photo_path(photo):
+            if isinstance(photo, dict):
+                return photo.get("path")
+            return photo
 
-        photos=[person['cropped_photo'] for person in self.all_persons]
-        for person in result_data.get('unexpected_members', []):
-            if person['cropped_photo'] not in photos:
-                self.all_persons.append(person)
+        cropped_photos = [
+            get_photo_path(person.get("cropped_photo"))
+            for person in self.all_persons
+        ]
 
-        # 2. Сбрасываем строки таблицы
+        for person in result_data.get("expected_members", []):
+            photo_path = get_photo_path(person.get("cropped_photo"))
+
+            if photo_path and photo_path not in cropped_photos:
+                self.all_persons.append(person)
+                cropped_photos.append(photo_path)
+
+        for person in result_data.get("unexpected_members", []):
+            photo_path = get_photo_path(person.get("cropped_photo"))
+
+            if photo_path and photo_path not in cropped_photos:
+                self.all_persons.append(person)
+                cropped_photos.append(photo_path)
+
         self.table.setRowCount(0)
-        
-        # 3. Заполняем таблицу заново
+
         for i, person in enumerate(self.all_persons):
-            self.table.insertRow(i) 
-            
-            #фио
-            person_name = QTableWidgetItem(str(person['fio']))
-            self.table.setItem(i, 0, person_name)
-            
-            #фото лица
-            label_cropped = QLabel("Загрузка...")
+            self.table.insertRow(i)
+
+            # ФИО
+            self.table.setItem(
+                i,
+                0,
+                QTableWidgetItem(str(person.get("fio") or "Неизвестный"))
+            )
+
+            # Лицо
+            label_cropped = QLabel("Нет фото")
             label_cropped.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setCellWidget(i, 1, label_cropped)
-            
-            #шаблон лица
-            label_etalon = QLabel("Загрузка...")
+
+            # Эталон
+            label_etalon = QLabel("Нет фото")
             label_etalon.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setCellWidget(i, 2, label_etalon)
-            
-            #дистанция
-            person_distance = QTableWidgetItem(f"{person['distance']:}"[:5])
-            self.table.setItem(i, 3, person_distance)
 
-            #статус
-            person_status=QTableWidgetItem(f"{person['status']:}")
-            self.table.setItem(i, 4, person_status)
+            # Дистанция
+            distance = person.get("distance")
 
-            url_cropped = f"{self.BASE_IMAGE_URL}{person['cropped_photo']}"
-            url_etalon = f"{self.BASE_IMAGE_URL}{person['etalon_photo']}"
-            
-            asyncio.ensure_future(self.fetch_and_render_image(url_cropped, label_cropped))
-            asyncio.ensure_future(self.fetch_and_render_image(url_etalon, label_etalon))
+            self.table.setItem(
+                i,
+                3,
+                QTableWidgetItem(
+                    f"{distance:.4f}" if distance is not None else "-"
+                )
+            )
+
+            # Статус
+            self.table.setItem(
+                i,
+                4,
+                QTableWidgetItem(str(person.get("status")))
+            )
+
+            # Фото лица
+            cropped = person.get("cropped_photo")
+
+            if isinstance(cropped, dict):
+                url_cropped = (
+                    f"{self.BASE_IMAGE_URL}"
+                    f"{cropped['bucket']}/"
+                    f"{cropped['path']}"
+                )
+
+                asyncio.ensure_future(
+                    self.fetch_and_render_image(
+                        url_cropped,
+                        label_cropped
+                    )
+                )
+
+            # Эталонное фото
+            etalon = person.get("etalon_photo")
+
+            if isinstance(etalon, dict):
+                url_etalon = (
+                    f"{self.BASE_IMAGE_URL}"
+                    f"{etalon['bucket']}/"
+                    f"{etalon['path']}"
+                )
+
+                asyncio.ensure_future(
+                    self.fetch_and_render_image(
+                        url_etalon,
+                        label_etalon
+                    )
+                )
 
     async def fetch_and_render_image(self, url: str, target_label: QLabel):
         """Асинхронно скачивает картинку через httpx и вставляет в QLabel ячейки"""

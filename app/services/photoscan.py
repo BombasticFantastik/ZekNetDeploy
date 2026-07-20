@@ -34,6 +34,7 @@ class PhotoScanService:
     ):
         detected_faces = self.service.process_raw_image_bytes(file_bytes)
 
+
         if not detected_faces:
             return {
                 "status": "success",
@@ -42,6 +43,15 @@ class PhotoScanService:
                 "verified_members": []
             }
         
+        print("faces:", len(detected_faces))
+
+        for i, face in enumerate(detected_faces):
+            print(
+                i,
+                face["embedding"][:5],
+                face["score"]
+            )
+            
         unit = await self.u_repo.get_unit_by_id(unit_id)
 
         if not unit:
@@ -220,10 +230,15 @@ class PhotoScanService:
                 members.append({
                     "fio": prisoner.fio,
                     "status": status,
-                    "confidence": log.face_detection_score,
                     "distance": log.match_distance,
-                    "etalon_photo": prisoner.photo_minio_path,
-                    "cropped_photo": log.cropped_face_minio_path
+                    "etalon_photo": {
+                        "bucket": settings.INFERENCE_BUCKET,
+                        "path": prisoner.photo_minio_path
+                    },
+                    "cropped_photo": {
+                        "bucket": settings.BUILDINGS_BUCKET,
+                        "path": log.cropped_face_minio_path
+                    }
                 })
 
             else:
@@ -231,9 +246,11 @@ class PhotoScanService:
                 members.append({
                     "fio": prisoner.fio,
                     "status": "absent",
-                    "confidence": None,
                     "distance": None,
-                    "etalon_photo": prisoner.photo_minio_path,
+                    "etalon_photo": {
+                        "bucket": settings.INFERENCE_BUCKET,
+                        "path": prisoner.photo_minio_path
+                    },
                     "cropped_photo": None
                 })
 

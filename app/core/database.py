@@ -11,7 +11,7 @@ from app.core.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=True, # Отображение запросов, потом поменять на фолс
+    echo=False, # Отображение запросов, потом поменять на фолс
     future=True
 )
 

@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.camera = None
+        self.camera = cv2.VideoCapture(0)
         self.curent_frame = cv2.imread(img_path)
         self.current_unit_id = 1
         self.attendance_table_window=AttendanceTableWindow()

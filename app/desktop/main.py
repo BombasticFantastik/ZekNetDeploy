@@ -298,7 +298,12 @@ class AttendanceTableWindow(QWidget):
         for person in result_data.get("expected_members", []):
             photo_path = get_photo_path(person.get("cropped_photo"))
 
-            if photo_path and photo_path not in cropped_photos:
+            # absent (нет фото) — добавляем всегда
+            if photo_path is None:
+                self.all_persons.append(person)
+                continue
+
+            if photo_path not in cropped_photos:
                 self.all_persons.append(person)
                 cropped_photos.append(photo_path)
 

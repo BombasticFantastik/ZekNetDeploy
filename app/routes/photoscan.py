@@ -19,25 +19,23 @@ async def scan_formation(
     unit_id: Annotated[int, Form()],
     service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
 ):
-    """
-    Принимает общее фото взвода
-    1. Нарезает лица первой моделью
-    2. Сохраняет каждое вырезанное лицо (кроп) в MinIO (бакет buildings)
-    3. Превращает кроп во временный вектор второй моделью
-    4. Сравнивает его через pgvector со всеми эталонами из Postgres
-    5. Записывает сессию и логи детекции в базу данных
-    """
-    file_bytes = await file.read()
-    
-    ml_session = await service.process_formation(
-        unit_id=unit_id,
-        file_bytes=file_bytes,
-        filename=file.filename
-    )
+    try:
+        file_bytes = await file.read()
 
-    report = await service.build_report(ml_session.id)
+        ml_session = await service.process_formation(
+            unit_id=unit_id,
+            file_bytes=file_bytes,
+            filename=file.filename
+        )
 
-    return report
+        report = await service.build_report(ml_session.id)
+
+        return report
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 @router.get("/sessions/{ml_session_id}/report")

@@ -45,15 +45,7 @@ class PhotoScanMLService:
         final_ml_results: list[ProcessedFaceResult] = []
         
         for i, face in enumerate(detected_faces):
-            # Берем ГОТОВЫЙ кроп лица из детектора. Руками по bbox из image больше не режем!
-            print(
-                i,
-                "bbox:",
-                face["bbox"],
-                "embedding:",
-                face["embedding"][:5]
-            )
-            
+            # Берем ГОТОВЫЙ кроп лица из детектора. Руками по bbox из image больше не режем!            
             face_numpy = face["image"]
             
             if face_numpy.size == 0:

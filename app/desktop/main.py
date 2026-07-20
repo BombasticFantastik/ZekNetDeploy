@@ -84,8 +84,7 @@ class MainWindow(QMainWindow):
     def update_camera(self):
         """Регулярно забирает кадр с камеры и выводит на экран"""
 
-        # success, frame = self.camera.read()
-        success = None
+        success, frame = self.camera.read()
 
         if not success:
             frame = cv2.imread(img_path)
@@ -401,6 +400,7 @@ class AttendanceTableWindow(QWidget):
             else:
                 target_label.setText(f"ошибка {response.status_code}")
         except Exception as e:
+            print("IMAGE LOAD ERROR:", url, repr(e))
             target_label.setText("Ошибка сети")
 
     def closeEvent(self, event):

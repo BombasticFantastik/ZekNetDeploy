@@ -72,7 +72,7 @@ class PhotoScanService:
                 content_type="image/jpeg"
             )
 
-            cropped_path = f"{settings.BUILDINGS_BUCKET}/{file_id}"
+            cropped_path = file_id
 
             matched_rows = await self.repo.find_match(face["embedding"])
 
@@ -263,7 +263,10 @@ class PhotoScanService:
                     "confidence": log.face_detection_score,
                     "distance": None,
                     "etalon_photo": None,
-                    "cropped_photo": log.cropped_face_minio_path
+                    "cropped_photo": {
+                        "bucket": settings.BUILDINGS_BUCKET,
+                        "path": log.cropped_face_minio_path
+                    }
                 })
 
         expected_count = len(session.unit.prisoners)

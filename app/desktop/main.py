@@ -5,15 +5,28 @@ import httpx
 from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, 
                              QVBoxLayout, QPushButton, QHBoxLayout, 
                              QWidget, QTextEdit,QTableWidget,QTableWidgetItem,
-                             QAbstractItemView,QHeaderView,QLineEdit,QFileDialog)
+                             QAbstractItemView,QHeaderView,QLineEdit,QFileDialog, QMessageBox)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot,Qt,Signal
 #from photoloader import PhotoLoader
 
 import qasync  
 import os
+import io
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(BASE_DIR))
+
+from app.core.config import settings
 #from test import fake_json
 
+
+def get_client(self):
+    return httpx.AsyncClient(
+        base_url="http://127.0.0.1:8000",
+        timeout=10.0
+    )
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +37,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.camera = None
+        self.camera = cv2.VideoCapture(0)
         self.curent_frame = cv2.imread(img_path)
         self.current_unit_id = 1
         self.attendance_table_window=AttendanceTableWindow()
@@ -409,160 +422,187 @@ class AttendanceTableWindow(QWidget):
             target_label.setText("Ошибка сети")
 
     def closeEvent(self, event):
-        asyncio.ensure_future(self.client.aclose())
         event.accept()
 
 class UnitsTableWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Отряды")
-        self.all_persons = []
-        self.resize(1200, 800) 
-        
-        self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=10.0)
+        self.resize(1200, 800)
 
-        # правый layout
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0) 
+        self.client = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8000",
+            timeout=10.0
+        )
 
+        # таблица
         self.table = QTableWidget()
         self.table.setRowCount(0)
-        # Увеличили количество колонок до 3
         self.table.setColumnCount(3)
-        
-        # Добавили заголовок для удаления
+
         headers = ['Id', 'Название отряда', 'Действие']
         self.table.setHorizontalHeaderLabels(headers)
-        
+
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) 
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Кнопка удаления будет компактной
-        
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
         self.table.verticalHeader().setDefaultSectionSize(75)
         self.table.verticalHeader().setVisible(False)
-        
+
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        
-        right_layout.addWidget(self.table)
 
-        # левый layout
+        # левая панель
         left_layout = QVBoxLayout()
-        left_layout.setSpacing(10) 
 
-        # Кнопка закрытия
         close_button = QPushButton("Закрыть окно")
-        close_button.setFixedWidth(120) 
-        close_button.clicked.connect(self.close_this_window)
-        
+        close_button.clicked.connect(self.close)
         left_layout.addWidget(close_button)
-        left_layout.addStretch() 
-        
-        # Форма создания нового отряда
+
         self.unit_name_input = QLineEdit()
         self.unit_name_input.setPlaceholderText("Имя нового отряда...")
-        self.unit_name_input.setFixedWidth(150)
-        
-        create_button = QPushButton("Создать отряд")
-        create_button.setFixedWidth(150)
-        create_button.clicked.connect(self.create_new_unit)
-        
         left_layout.addWidget(self.unit_name_input)
-        left_layout.addWidget(create_button)
-        left_layout.addSpacing(20) 
 
-        # Главный контейнер
+        create_button = QPushButton("Создать отряд")
+        create_button.clicked.connect(self.create_new_unit)
+        left_layout.addWidget(create_button)
+
+        left_layout.addStretch()
+
+        # правая панель
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.table)
+
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(15, 15, 15, 15) 
-        main_layout.setSpacing(15) 
-        
         main_layout.addLayout(left_layout)
         main_layout.addLayout(right_layout)
 
         self.setLayout(main_layout)
-        
-    def close_this_window(self):
-        self.close()
+
+        # ВАЖНО: загрузка данных при старте
+        asyncio.ensure_future(self.update_data())
+
+    # -------------------- CREATE --------------------
 
     def create_new_unit(self):
-        """Слот кнопки: валидирует ввод и запускает асинхронный POST"""
         name = self.unit_name_input.text().strip()
-        if not name:
+
+        if len(name) < 2:
+            QMessageBox.warning(self, "Ошибка", "Слишком короткое имя")
             return
-            
+
+        self.unit_name_input.setDisabled(True)
         asyncio.ensure_future(self.send_create_request(name))
 
     async def send_create_request(self, name):
-        """Отправка POST-запроса на создание отряда"""
-        url_path = "/api/v1/unit_creator/"
         try:
-            response = await self.client.post(url_path, json={"name": name})
+            response = await self.client.post(
+                "/api/v1/unit_creator/",
+                json={"name": name}
+            )
+
             if response.status_code in (200, 201):
                 self.unit_name_input.clear()
-                await self.update_data() 
+                await self.update_data()
             else:
-                print(f"Ошибка бэкенда при создании: {response.status_code}")
-        except Exception as e:
-            print(f"Ошибка сети/запроса при создании: {e}")
+                QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    f"Ошибка создания: {response.status_code}"
+                )
 
-    async def update_data(self, result_data=None):
-        """Асинхронное получение данных и заполнение таблицы"""
-        url_path = "/api/v1/unit_creator/"
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка сети", str(e))
+
+        finally:
+            self.unit_name_input.setDisabled(False)
+
+    # -------------------- GET --------------------
+
+    async def update_data(self):
         try:
-            response = await self.client.get(url_path)
+            response = await self.client.get("/api/v1/unit_creator/")
+
+            if response.status_code != 200:
+                QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    f"GET ошибка: {response.status_code}"
+                )
+                return
+
             result_data = response.json()
 
-            self.table.setRowCount(0)
-            for i, unit in enumerate(result_data.get('units', [])):
-                self.table.insertRow(i) 
-                
-                # id
-                unit_id_item = QTableWidgetItem(str(unit['id']))
-                self.table.setItem(i, 0, unit_id_item)
-                            
-                # имя
-                unit_name_item = QTableWidgetItem(f"{unit['name']}")
-                self.table.setItem(i, 1, unit_name_item)
+            # если вдруг бэк вернул список, а не dict
+            if isinstance(result_data, list):
+                units = result_data
+            else:
+                units = result_data.get("units", [])
 
-                # Кнопка удаления в третью колонку
+            self.table.setRowCount(0)
+
+            for i, unit in enumerate(units):
+                self.table.insertRow(i)
+
+                # id
+                self.table.setItem(
+                    i, 0,
+                    QTableWidgetItem(str(unit.get("id")))
+                )
+
+                # имя
+                self.table.setItem(
+                    i, 1,
+                    QTableWidgetItem(unit.get("name", ""))
+                )
+
+                # кнопка удаления
+                unit_id = unit.get("id")
+
                 delete_button = QPushButton("Удалить")
-                # Используем lambda с фиксацией текущего unit['id'], чтобы не стирались ссылки в цикле
-                unit_id = unit['id']
-                delete_button.clicked.connect(lambda checked, uid=unit_id: self.delete_unit(uid))
-                
-                # Центрируем кнопку в ячейке для красоты
+                delete_button.clicked.connect(
+                    lambda _, uid=unit_id: self.delete_unit(uid)
+                )
+
                 container = QWidget()
                 layout = QHBoxLayout(container)
                 layout.addWidget(delete_button)
-                layout.setContentsMargins(5, 5, 5, 5)
                 layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                container.setLayout(layout)
-                
+                layout.setContentsMargins(5, 5, 5, 5)
+
                 self.table.setCellWidget(i, 2, container)
 
         except Exception as e:
-            print(f"Ошибка при обновлении таблицы: {e}")
+            QMessageBox.warning(self, "Ошибка", f"{e}")
+
+    # -------------------- DELETE --------------------
 
     def delete_unit(self, unit_id):
-        """Слот кнопки удаления: запускает асинхронный DELETE запрос"""
         asyncio.ensure_future(self.send_delete_request(unit_id))
 
     async def send_delete_request(self, unit_id):
-        """Отправка DELETE-запроса на бэкенд"""
-        # Обычно путь выглядит как /api/v1/unit_creator/{id}/, проверь под свой бэкенд
-        url_path = f"/api/v1/unit_creator/{unit_id}/"
         try:
-            response = await self.client.delete(url_path)
-            if response.status_code in (200, 204): # 204 No Content часто используется для DELETE
-                await self.update_data() # Обновляем таблицу после успешного удаления
+            response = await self.client.delete(
+                f"/api/v1/unit_creator/{unit_id}"
+            )
+
+            if response.status_code in (200, 204):
+                await self.update_data()
             else:
-                print(f"Ошибка бэкенда при удалении: {response.status_code}")
+                QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    f"Ошибка удаления: {response.status_code}"
+                )
+
         except Exception as e:
-            print(f"Ошибка сети/запроса при удалении: {e}")
+            QMessageBox.warning(self, "Ошибка сети", str(e))
+
+    # -------------------- CLOSE --------------------
 
     def closeEvent(self, event):
-        asyncio.ensure_future(self.client.aclose())
         event.accept()
 
 
@@ -572,17 +612,18 @@ class UsersTableWindow(QWidget):
         self.setWindowTitle("Личный состав")
         self.all_persons = []
         self.selected_file_path = None  # Сюда сохраняем путь к выбранному фото
+        self.current_selected_prisoner_id = None  # ID редактируемого записи
         self.resize(1200, 800) 
-        
+
+        self.BASE_IMAGE_URL = "http://127.0.0.1:8000/api/v1/bucket_loader/image/"
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=10.0)
 
-        # правый layout
+        # Правый layout (Таблица)
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0) 
 
         self.table = QTableWidget()
         self.table.setRowCount(0)
-        # Увеличили до 5 колонок, чтобы добавить кнопки действий (Редактировать / Удалить)
         self.table.setColumnCount(5)
         
         headers = ['Id', 'ФИО', 'Фото', 'Отряд', 'Действия']
@@ -603,19 +644,19 @@ class UsersTableWindow(QWidget):
         
         right_layout.addWidget(self.table)
 
-        # левый layout
+        # Левый layout (Форма)
         left_layout = QVBoxLayout()
         left_layout.setSpacing(10) 
 
         # Кнопка закрытия
         close_button = QPushButton("Закрыть окно")
-        close_button.setFixedWidth(120) 
+        close_button.setFixedWidth(150) 
         close_button.clicked.connect(self.close_this_window)
         
         left_layout.addWidget(close_button)
         left_layout.addStretch() 
         
-        # Форма создания нового человека
+        # Форма создания / редактирования
         self.user_name_input = QLineEdit()
         self.user_name_input.setPlaceholderText("ФИО человека")
         self.user_name_input.setFixedWidth(150)
@@ -631,11 +672,16 @@ class UsersTableWindow(QWidget):
         create_button = QPushButton("Создать человека")
         create_button.setFixedWidth(150)
         create_button.clicked.connect(self.create_new_user)
+
+        save_edit_button = QPushButton("Сохранить изм.")
+        save_edit_button.setFixedWidth(150)
+        save_edit_button.clicked.connect(self.save_edited_user)
         
         left_layout.addWidget(self.user_name_input)
         left_layout.addWidget(self.user_image_input)
         left_layout.addWidget(self.user_unit_input)
         left_layout.addWidget(create_button)
+        left_layout.addWidget(save_edit_button)
         left_layout.addSpacing(20) 
 
         # Главный контейнер
@@ -648,24 +694,23 @@ class UsersTableWindow(QWidget):
 
         self.setLayout(main_layout)
         
-        # Автоматически загружаем данные при инициализации окна
+        # Загрузка данных при старте
         asyncio.ensure_future(self.update_data())
 
     def close_this_window(self):
         self.close()
 
     def pick_file(self):
-        """Выбор файла фотографии через стандартный диалог"""
+        """Выбор файла фотографии"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Выберите фото", "", "Изображения (*.png *.jpg *.jpeg)"
         )
         if file_path:
             self.selected_file_path = file_path
-            # Меняем текст кнопки на имя файла, чтобы пользователь видел, что файл выбран
             self.user_image_input.setText(os.path.basename(file_path))
 
     def create_new_user(self):
-        """Слот создания: валидация полей и запуск асинхронного POST"""
+        """Валидация полей и запуск POST"""
         fio = self.user_name_input.text().strip()
         unit_id_str = self.user_unit_input.text().strip()
         
@@ -682,125 +727,190 @@ class UsersTableWindow(QWidget):
         asyncio.ensure_future(self.send_create_request(fio, unit_id, self.selected_file_path))
 
     async def send_create_request(self, fio, unit_id, file_path):
-        """Отправка multipart/form-data на POST /prisoners"""
-        url_path = "/prisoners"
+        url_path = "/api/v1/photoscan/prisoners"
+
         try:
-            # Открываем файл и готовим данные для формы, как требует роут FastAPI (списки)
             with open(file_path, "rb") as f:
-                files = [("files", (os.path.basename(file_path), f.read(), "image/jpeg"))]
-                data = {
-                    "fios": [fio],
-                    "unit_id": [unit_id]
-                }
-                
-                response = await self.client.post(url_path, files=files, data=data)
-                
+                image_bytes = f.read()
+
+            files = {
+                "files": (os.path.basename(file_path), image_bytes, "image/jpeg")
+            }
+
+            data = {
+                "fios": fio,
+                "unit_id": str(unit_id)
+            }
+
+            response = await self.client.post(
+                url_path,
+                files=files,
+                data=data
+            )
+
             if response.status_code in (200, 201):
-                # Сбрасываем форму
                 self.user_name_input.clear()
                 self.user_unit_input.clear()
                 self.user_image_input.setText("Фото человека")
                 self.selected_file_path = None
-                
+
                 await self.update_data()
-            else:
-                print(f"Ошибка бэкенда при создании: {response.status_code}, {response.text}")
+
         except Exception as e:
-            print(f"Ошибка сети при создании: {e}")
+            print("Ошибка сети при создании:", repr(e))
 
     async def update_data(self):
-        """Получение списка всех заключенных/пользователей и рендер таблицы"""
-        url_path = "/prisoners"
+        """Загрузка списка пользователей и рендер таблицы"""
+        url_path = "/api/v1/photoscan/prisoners"
         try:
             response = await self.client.get(url_path)
             if response.status_code != 200:
                 print(f"Не удалось загрузить данные: {response.status_code}")
                 return
                 
-            result_data = response.json() # Напрямую получаем list[PrisonerGet]
+            result_data = response.json()
             self.table.setRowCount(0)
             
             for i, prisoner in enumerate(result_data):
                 self.table.insertRow(i)
                 
-                # Поля из PrisonerGet (подставьте точные ключи вашей модели, если они отличаются)
-                p_id = prisoner.get('id')
-                p_fio = prisoner.get('fio', 'Не указано')
-                p_photo = prisoner.get('photo_url', '—') # или любой другой ключ ссылки на MinIO
-                p_unit = prisoner.get('unit_id', '—')
+                p_id = prisoner.get("id")
+                p_fio = prisoner.get("fio", "Не указано")
                 
+                # --- ПОЛУЧАЕМ ИЗОБРАЖЕНИЕ ---
+                photo_obj = prisoner.get("photo_minio_path") or prisoner.get("photo")
+                
+                # Отряд
+                unit = prisoner.get("unit")
+                if isinstance(unit, dict):
+                    p_unit_name = unit.get("name", "-")
+                    raw_unit_id = unit.get("id", "")
+                else:
+                    raw_unit_id = prisoner.get("unit_id", "")
+                    p_unit_name = str(raw_unit_id)
+                
+                # Заполнение базовых ячеек
                 self.table.setItem(i, 0, QTableWidgetItem(str(p_id)))
                 self.table.setItem(i, 1, QTableWidgetItem(str(p_fio)))
-                self.table.setItem(i, 2, QTableWidgetItem(str(p_photo)))
-                self.table.setItem(i, 3, QTableWidgetItem(str(p_unit)))
                 
-                # Контейнер для двух кнопок управления (Изменить и Удалить)
+                # Ячейка с фото
+                label_photo = QLabel("Нет фото")
+                label_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.table.setCellWidget(i, 2, label_photo)
+
+                # Обработка URL фото (если объект dict со строкой 'bucket' и 'path' или просто путь)
+                if isinstance(photo_obj, dict):
+                    bucket = photo_obj.get("bucket", settings.INFERENCE_BUCKET)
+                    path = photo_obj.get("path", "")
+                    img_url = f"{self.BASE_IMAGE_URL}{bucket}/{path}"
+                    asyncio.ensure_future(self.fetch_and_render_image(img_url, label_photo))
+                elif isinstance(photo_obj, str) and photo_obj and photo_obj != "—":
+                    # Если бэкенд возвращает сразу имя файла (например uuid4.png)
+                    # Подставь имя бакета, куда бэк сохраняет фото (например "photoscan" или "prisoners")
+                    bucket = settings.INFERENCE_BUCKET
+                    img_url = f"{self.BASE_IMAGE_URL}{bucket}/{photo_obj}"
+                    asyncio.ensure_future(self.fetch_and_render_image(img_url, label_photo))
+
+                self.table.setItem(i, 3, QTableWidgetItem(str(p_unit_name)))
+                
+                # Кнопки действий
                 actions_container = QWidget()
                 actions_layout = QHBoxLayout(actions_container)
                 actions_layout.setContentsMargins(5, 2, 5, 2)
                 actions_layout.setSpacing(5)
                 
-                # Кнопка "Изменить"
                 edit_btn = QPushButton("Изменить")
-                edit_btn.clicked.connect(lambda checked, pid=p_id: self.edit_user(pid))
+                edit_btn.clicked.connect(
+                    lambda checked, pid=p_id, fio=p_fio, uid=raw_unit_id: self.select_user_for_edit(pid, fio, uid)
+                )
                 
-                # Кнопка "Удалить"
                 delete_btn = QPushButton("Удалить")
-                delete_btn.clicked.connect(lambda checked, pid=p_id: self.delete_user(pid))
+                delete_btn.clicked.connect(
+                    lambda checked, pid=p_id: self.delete_user(pid)
+                )
                 
                 actions_layout.addWidget(edit_btn)
                 actions_layout.addWidget(delete_btn)
-                actions_container.setLayout(actions_layout)
                 
                 self.table.setCellWidget(i, 4, actions_container)
                 
         except Exception as e:
             print(f"Ошибка при обновлении таблицы: {e}")
 
-    def edit_user(self, prisoner_id):
-        """Слот кнопки изменения: берет текущие данные из полей ввода и шлет PATCH"""
+    async def fetch_and_render_image(self, url: str, target_label: QLabel):
+        """Асинхронно скачивает картинку из MinIO и отображает её в QLabel"""
+        try:
+            response = await self.client.get(url)
+            if response.status_code == 200:
+                pixmap = QPixmap()
+                pixmap.loadFromData(response.content)
+                
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        70, 70, 
+                        Qt.AspectRatioMode.KeepAspectRatio, 
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    target_label.setPixmap(scaled)
+                else:
+                    target_label.setText("Ошибка формата")
+            else:
+                target_label.setText(f"ошибка {response.status_code}")
+        except Exception as e:
+            print("IMAGE LOAD ERROR:", url, repr(e))
+            target_label.setText("Ошибка сети")
+
+    def select_user_for_edit(self, prisoner_id: int, fio: str, unit_id):
+        """Подставляет данные пользователя в поля формы слева"""
+        self.current_selected_prisoner_id = prisoner_id
+        self.user_name_input.setText(str(fio) if fio != "Не указано" else "")
+        self.user_unit_input.setText(str(unit_id) if unit_id is not None else "")
+
+    def save_edited_user(self):
+        """Отправка PATCH-запроса с изменениями"""
+        if self.current_selected_prisoner_id is None:
+            print("Ошибка: Сначала нажмите «Изменить» напротив нужного человека!")
+            return
+
         fio = self.user_name_input.text().strip()
         unit_id_str = self.user_unit_input.text().strip()
         
-        # Для PATCH сделаем валидацию: обновляем то, что заполнено в полях ввода
         payload = {}
         if fio:
             payload["fio"] = fio
+
         if unit_id_str:
             try:
                 payload["unit_id"] = int(unit_id_str)
             except ValueError:
-                print("Для изменения ID отряда должен быть числом")
+                print("Ошибка: ID отряда должен быть числом")
                 return
                 
         if not payload:
-            print("Введите новые ФИО или ID отряда в поля слева, чтобы изменить пользователя.")
+            print("Заполните хотя бы одно поле перед сохранением!")
             return
             
-        asyncio.ensure_future(self.send_edit_request(prisoner_id, payload))
+        asyncio.ensure_future(self.send_edit_request(self.current_selected_prisoner_id, payload))
 
-    async def send_edit_request(self, prisoner_id, payload):
-        """Отправка PATCH JSON-запроса на бэкенд"""
-        url_path = f"/prisoners/{prisoner_id}"
+    async def send_edit_request(self, prisoner_id: int, payload: dict):
+        url_path = f"/api/v1/photoscan/prisoners/{prisoner_id}"
         try:
-            # Передаем payload как JSON, соответствующий PrisonerUnitPatch
             response = await self.client.patch(url_path, json=payload)
             if response.status_code in (200, 204):
                 self.user_name_input.clear()
                 self.user_unit_input.clear()
+                self.current_selected_prisoner_id = None
                 await self.update_data()
             else:
-                print(f"Ошибка бэкенда при изменении: {response.status_code}")
+                print(f"Ошибка бэкенда при изменении {response.status_code}: {response.text}")
         except Exception as e:
-            print(f"Ошибка сети при изменении: {e}")
+            print(f"Ошибка сети при изменении: {repr(e)}")
 
     def delete_user(self, prisoner_id):
-        """Слот кнопки удаления: запускает асинхронный DELETE"""
         asyncio.ensure_future(self.send_delete_request(prisoner_id))
 
     async def send_delete_request(self, prisoner_id):
-        """Отправка DELETE-запроса на бэкенд"""
-        url_path = f"/prisoners/{prisoner_id}"
+        url_path = f"/api/v1/photoscan/prisoners/{prisoner_id}"
         try:
             response = await self.client.delete(url_path)
             if response.status_code in (200, 204):
@@ -811,8 +921,6 @@ class UsersTableWindow(QWidget):
             print(f"Ошибка сети при удалении: {e}")
 
     def closeEvent(self, event):
-        # Аккуратно закрываем сессию httpx при закрытии окна
-        asyncio.ensure_future(self.client.aclose())
         event.accept()
 
 

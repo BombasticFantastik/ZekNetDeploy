@@ -3,6 +3,7 @@ from uuid import uuid4
 from io import BytesIO
 from contextlib import asynccontextmanager
 from types_aiobotocore_s3.client import S3Client
+from botocore.exceptions import ClientError
 
 # Два наших бакета в MinIO хранилище
 # buildings - фото построений (сырой вход)
@@ -31,6 +32,14 @@ class MinIOCLient:
         ) as s3:
             s3_client: S3Client = s3
             yield s3_client
+
+    async def init_buckets(self, buckets: list[str]) -> None:
+        async with self._get_s3_client() as s3:
+            for bucket in buckets:
+                try:
+                    await s3.head_bucket(Bucket=bucket)
+                except ClientError:
+                    await s3.create_bucket(Bucket=bucket)
         
     async def put_image(self, bucket: str, data: bytes, content_type="image/jpeg", file_id: str | None = None) -> str:
         if not file_id:

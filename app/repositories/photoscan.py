@@ -23,6 +23,9 @@ class PhotoScanRepository:
         return session
     
     async def find_match(self, embedding):
+        if embedding is None:
+            return None
+
         distance = PrisonerEtalon.face_embedding.cosine_distance(embedding)
 
         result = await self.db.execute(
@@ -32,6 +35,7 @@ class PhotoScanRepository:
                 PrisonerEtalon.fio,
                 distance.label("distance")
             )
+            .where(PrisonerEtalon.face_embedding.isnot(None))
             .order_by(distance)
             .limit(1)
         )

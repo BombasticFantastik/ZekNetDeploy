@@ -1,6 +1,7 @@
 from app.core.minio_client import MinIOCLient
 from app.services.detection_service import PhotoScanMLService
 from app.repositories.photoscan import PhotoScanRepository
+from app.repositories.units import UnitRepository
 from app.services.embedding_service import EmbeddingMLService
 from app.schemas.prisoners import PrisonerUnitPatch
 
@@ -16,12 +17,14 @@ class PhotoScanService:
         service: PhotoScanMLService, 
         embedding_service: EmbeddingMLService,
         minio: MinIOCLient,
-        repo: PhotoScanRepository
+        repo: PhotoScanRepository,
+        u_repo: UnitRepository
     ):
         self.service = service
         self.embedding_service = embedding_service
         self.minio = minio
         self.repo = repo
+        self.u_repo = u_repo
 
     async def process_formation(
             self, 
@@ -38,6 +41,11 @@ class PhotoScanService:
                 "faces_count": 0,
                 "verified_members": []
             }
+        
+        unit = await self.u_repo.get_unit_by_id(unit_id)
+
+        if not unit:
+            raise HTTPException(status_code=404, detail="Unit not found")
         
         session = await self.repo.create_session(
             unit_id,
@@ -163,17 +171,23 @@ class PhotoScanService:
                 data=file_bytes
             )
 
-            self.repo.create_etalon(
-                photo_path=unique_filename,
-                embedding=embedding,
-                fio=fio,
-                unit_id=unit_id
-            )
+            try:
+                self.repo.create_etalon(
+                    photo_path=unique_filename,
+                    embedding=embedding,
+                    fio=fio,
+                    unit_id=unit_id
+                )
+
+                await self.repo.commit()
+            except Exception as e:
+                await self.minio.delete_image(
+                    bucket=settings.INFERENCE_BUCKET,
+                    file_id=unique_filename
+                )
+                raise e
 
             processed_count += 1
-
-        if processed_count:
-            await self.repo.commit()
 
         return {
             "status": "success",
@@ -187,10 +201,12 @@ class PhotoScanService:
         if not session:
             raise ValueError("Session not found")
         
+        exists_prisoners = {p.id for p in session.unit.prisoners}
+        
         found_ids = {
             log.matched_prisoner_id: log
             for log in session.attendance_logs
-            if log.is_verified
+            if log.is_verified and log.matched_prisoner_id in exists_prisoners
         }
 
         members = []
@@ -237,7 +253,7 @@ class PhotoScanService:
 
         expected_count = len(session.unit.prisoners)
         present_count = len(found_ids)
-        absent_count = expected_count - present_count
+        absent_count = max((expected_count - present_count), 0)
         unknown_count = len(unkmembers)
 
         return {

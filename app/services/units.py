@@ -3,6 +3,8 @@ from app.repositories.units import UnitRepository
 
 from app.core.config import settings
 
+from fastapi import HTTPException
+
 
 class UnitService:
     def __init__(self, repo: UnitRepository):
@@ -21,6 +23,10 @@ class UnitService:
         return await self.repo.get_all_units()
     
     async def delete(self, unit_id: int) -> bool:
+        unit = await self.repo.get_unit_by_id(unit_id)
+        if not unit:
+            raise HTTPException(status_code=404, detail="Отряд не найден")
+
         result = await self.repo.delete(unit_id)
 
         if result:

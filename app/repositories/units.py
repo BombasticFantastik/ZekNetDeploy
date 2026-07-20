@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db_models.prisoners_etalons import Unit
 
-from sqlalchemy import select
+from sqlalchemy import select, exists
 
 
 class UnitRepository:

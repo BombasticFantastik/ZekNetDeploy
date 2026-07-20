@@ -46,6 +46,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint('id')
     )
+    # Индекс для быстрого поиска сессий конкретного отряда
+    op.create_index(
+        'ix_attendance_sessions_unit_id', 
+        'attendance_sessions', 
+        ['unit_id']
+    )
 
     # Эталоны людей
     op.create_table(
@@ -63,6 +69,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('photo_minio_path')
     )
+    # Индекс для быстрого поиска заключенных конкретного отряда (GET /prisoners?unit_id=...)
+    op.create_index(
+        'ix_prisoners_etalons_unit_id', 
+        'prisoners_etalons', 
+        ['unit_id']
+    )
 
     # Результаты отдельных лиц на фотографии
     op.create_table(
@@ -79,12 +91,25 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['session_id'], ['attendance_sessions.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
+    # Индекс для мгновенного получения логов по ID сессии
+    op.create_index(
+        'ix_attendance_logs_session_id', 
+        'attendance_logs', 
+        ['session_id']
+    )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
 
+    # При откате сначала удаляем индексы, затем таблицы
+    op.drop_index('ix_attendance_logs_session_id', table_name='attendance_logs')
     op.drop_table('attendance_logs')
+
+    op.drop_index('ix_prisoners_etalons_unit_id', table_name='prisoners_etalons')
     op.drop_table('prisoners_etalons')
+
+    op.drop_index('ix_attendance_sessions_unit_id', table_name='attendance_sessions')
     op.drop_table('attendance_sessions')
+
     op.drop_table('units')

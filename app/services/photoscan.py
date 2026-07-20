@@ -51,7 +51,7 @@ class PhotoScanService:
                 face["embedding"][:5],
                 face["score"]
             )
-            
+
         unit = await self.u_repo.get_unit_by_id(unit_id)
 
         if not unit:
@@ -82,8 +82,6 @@ class PhotoScanService:
             matched_photo = None
             matched_fio = None
             MATCH_THRESHOLD = 0.6
-
-            matched_rows = await self.repo.find_match(face["embedding"])
 
             if matched_rows:
                 match_distance = matched_rows["distance"]

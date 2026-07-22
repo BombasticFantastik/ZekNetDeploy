@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form
-from typing import Annotated, List
+from fastapi import APIRouter, Depends
 
 from app.dependencies.units import get_units_service
 from app.services.units import UnitService
+from app.schemas.unit import UnitCreate
 
 
 router = APIRouter(
@@ -13,10 +13,10 @@ router = APIRouter(
 
 @router.post("/")
 async def post_unit(
-    unit_name: str,
+    unit: UnitCreate,
     service: UnitService = Depends(get_units_service)
 ):
-    return await service.create(unit_name)
+    return await service.create(unit.name)
 
 
 @router.get("/{unit_id}")

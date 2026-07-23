@@ -98,11 +98,33 @@ def upgrade() -> None:
         ['session_id']
     )
 
+    # Таблица графиков / назначенных статусов
+    op.create_table(
+        'prisoner_schedules',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('prisoner_id', sa.Integer(), nullable=False),
+        sa.Column('date', sa.Date(), nullable=False),
+        sa.Column('status', sa.String(length=64), nullable=False),
+        sa.Column('note', sa.String(length=255), nullable=True),
+        sa.ForeignKeyConstraint(['prisoner_id'], ['prisoners_etalons.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('prisoner_id', 'date', name='uq_prisoner_date')
+    )
+    # Индекс для быстрого поиска по дате и человеку
+    op.create_index(
+        'ix_prisoner_schedules_date_prisoner', 
+        'prisoner_schedules', 
+        ['date', 'prisoner_id']
+    )
+
 
 def downgrade() -> None:
     """Downgrade schema."""
 
     # При откате сначала удаляем индексы, затем таблицы
+    op.drop_index('ix_prisoner_schedules_date_prisoner', table_name='prisoner_schedules')
+    op.drop_table('prisoner_schedules')
+
     op.drop_index('ix_attendance_logs_session_id', table_name='attendance_logs')
     op.drop_table('attendance_logs')
 

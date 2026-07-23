@@ -1,8 +1,7 @@
 from fastapi import Depends
 
 from app.core.cv_engine import CVEngine, get_cv_engine
-from app.services.detection_service import PhotoScanMLService
-from app.services.embedding_service import EmbeddingMLService
+from app.services import PhotoScanMLService, EmbeddingMLService
     
 
 def get_ml_service(engine: CVEngine = Depends(get_cv_engine)) -> PhotoScanMLService:

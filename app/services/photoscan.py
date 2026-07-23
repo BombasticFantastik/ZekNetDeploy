@@ -1,8 +1,6 @@
 from app.core.minio_client import MinIOCLient
-from app.services.detection_service import PhotoScanMLService
-from app.repositories.photoscan import PhotoScanRepository
-from app.repositories.units import UnitRepository
-from app.services.embedding_service import EmbeddingMLService
+from app.services import PhotoScanMLService, EmbeddingMLService
+from app.repositories import PhotoScanRepository, UnitRepository
 from app.schemas.prisoners import PrisonerUnitPatch
 
 from uuid import uuid4

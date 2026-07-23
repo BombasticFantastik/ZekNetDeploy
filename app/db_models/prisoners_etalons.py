@@ -33,6 +33,11 @@ class PrisonerEtalon(Base):
         "AttendanceLog",
         back_populates="matched_prisoner"
     )
+    schedules: Mapped[List["PrisonerSchedule"]] = relationship(
+        "PrisonerSchedule",
+        back_populates="prisoner",
+        cascade="all, delete-orphan"
+    )
     unit: Mapped["Unit"] = relationship(
         "Unit",
         back_populates="prisoners"

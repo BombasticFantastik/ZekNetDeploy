@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
 from typing import Annotated
 
-from app.dependencies.photoscan import get_photoscan_service
-from app.services.photoscan import PhotoScanService
+from app.dependencies import get_photoscan_service
+from app.services import PhotoScanService
 
 from app.schemas.prisoners import PrisonerUnitPatch, PrisonerGet
 

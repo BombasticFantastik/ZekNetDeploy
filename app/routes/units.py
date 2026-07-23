@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies.units import get_units_service
-from app.services.units import UnitService
+from app.dependencies import get_units_service
+from app.services import UnitService
 from app.schemas.unit import UnitCreate
 
 

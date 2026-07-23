@@ -8,6 +8,7 @@ from app.core.database import Base
 from app.db_models.prisoners_etalons import PrisonerEtalon
 from app.db_models.attendance_sessions import AttendanceSession
 from app.db_models.attendance_logs import AttendanceLog
+from app.db_models.prisoner_schedules import PrisonerSchedule
 
 from app.core.config import settings
 

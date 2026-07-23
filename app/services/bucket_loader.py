@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 from fastapi import HTTPException
 
-from app.repositories.bucket_loader import BucketLoaderRepository
+from app.repositories import BucketLoaderRepository
 
 
 class BucketLoaderService:

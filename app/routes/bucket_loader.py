@@ -1,8 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, Response, Depends
 
-from app.dependencies.bucket_loader import get_bucket_loader_service, get_bucket_loader_repo
-from app.services.bucket_loader import BucketLoaderService
-from app.repositories.bucket_loader import BucketLoaderRepository
+from app.dependencies import get_bucket_loader_service, get_bucket_loader_repo
+from app.services import BucketLoaderService
+from app.repositories import BucketLoaderRepository
 
 router = APIRouter(
     prefix="/api/v1/bucket_loader",

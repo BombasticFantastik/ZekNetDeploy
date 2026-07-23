@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.routes.photoscan import router as photoscan_router
 from app.routes.bucket_loader import router as bucket_loader_router
 from app.routes.units import router as units_router
+from app.routes.schedule import router as schedule_router
 
 # Регаем все три модели метаданных в общеем реестре
 # from app.db_models.prisoners_etalons import PrisonerEtalon
@@ -12,7 +13,7 @@ from app.routes.units import router as units_router
 
 from app.core.cv_engine import init_cv_engine, close_cv_engine
 from app.core.config import settings
-from app.dependencies.minio import get_minio_client
+from app.dependencies import get_minio_client
 from app.core.database import init_db
 
 
@@ -36,3 +37,4 @@ app = FastAPI(lifespan=global_lifespan)
 app.include_router(photoscan_router)
 app.include_router(bucket_loader_router)
 app.include_router(units_router)
+app.include_router(schedule_router)

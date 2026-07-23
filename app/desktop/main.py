@@ -13,6 +13,7 @@ from PySide6.QtCore import QTimer, Slot,Qt,Signal
 import qasync  
 import os
 import io
+import urllib
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -20,6 +21,8 @@ sys.path.append(str(BASE_DIR))
 
 from app.core.config import settings
 #from test import fake_json
+
+stream_url = f"http://{settings.IP_ADDRESS}:{settings.PORT}/mjpegfeed"
 
 
 def get_client(self):
@@ -37,7 +40,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.camera = cv2.VideoCapture(0)
+        self.camera = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
+        self.camera.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
+        # Это для меня что бы вебку с телефона транслировать, всем остальным сверху код убрать или закомитить, а этот разкомитить!!!
+        # self.camera = cv2.VideoCapture(0)
         self.curent_frame = cv2.imread(img_path)
         self.current_unit_id = 1
         self.attendance_table_window=AttendanceTableWindow()

@@ -36,5 +36,6 @@ def _run_alembic_upgrade():
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
 
+
 async def init_db() -> None:
     await asyncio.to_thread(_run_alembic_upgrade)

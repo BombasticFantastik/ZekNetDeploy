@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_SECURE: bool = False
 
+    # My cam
+    IP_ADDRESS: str = "192.168.0.140"
+    PORT: int = 4747
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

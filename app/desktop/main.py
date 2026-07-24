@@ -12,6 +12,7 @@ from PySide6.QtCore import QTimer, Slot,Qt,Signal
 import qasync  
 import os
 import io
+import urllib
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -20,10 +21,12 @@ sys.path.append(str(BASE_DIR))
 from app.core.config import settings
 #from test import fake_json
 
+stream_url = f"http://{settings.IP_ADDRESS}:{settings.PORT}/mjpegfeed"
+
 
 def get_client(self):
     return httpx.AsyncClient(
-        base_url="http://127.0.0.1:8000",
+        base_url="http://127.0.0.1:18080",
         timeout=10.0
     )
 
@@ -36,7 +39,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.camera = cv2.VideoCapture(0)
+        self.camera = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
+        self.camera.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
+        # Это для меня что бы вебку с телефона транслировать, всем остальным сверху код убрать или закомитить, а этот разкомитить!!!
+        # self.camera = cv2.VideoCapture(0)
         self.curent_frame = cv2.imread(img_path)
         self.current_unit_id = 1
         self.attendance_table_window=AttendanceTableWindow()
@@ -177,7 +183,7 @@ class MainWindow(QMainWindow):
             )
 
             response = await self.client.post(
-                "/api/v1/photoscan/scan_save_report",
+                "/api/v1/photoscan/sessions",
                 files=files,
                 data=data
             )
@@ -498,7 +504,7 @@ class UnitsTableWindow(QWidget):
     async def send_create_request(self, name):
         try:
             response = await self.client.post(
-                "/api/v1/unit_creator/",
+                "/api/v1/units/",
                 json={"name": name}
             )
 
@@ -506,14 +512,10 @@ class UnitsTableWindow(QWidget):
                 self.unit_name_input.clear()
                 await self.update_data()
             else:
-                QMessageBox.warning(
-                    self,
-                    "Ошибка",
-                    f"Ошибка создания: {response.status_code}"
-                )
+                print(f"Ошибка создания: {response.status_code}")
 
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка сети", str(e))
+            print(f"Ошибка сети: {e}")
 
         finally:
             self.unit_name_input.setDisabled(False)
@@ -522,19 +524,14 @@ class UnitsTableWindow(QWidget):
 
     async def update_data(self):
         try:
-            response = await self.client.get("/api/v1/unit_creator/")
+            response = await self.client.get("/api/v1/units/")
 
             if response.status_code != 200:
-                QMessageBox.warning(
-                    self,
-                    "Ошибка",
-                    f"GET ошибка: {response.status_code}"
-                )
+                print(f"GET ошибка: {response.status_code}")
                 return
 
             result_data = response.json()
 
-            # если вдруг бэк вернул список, а не dict
             if isinstance(result_data, list):
                 units = result_data
             else:
@@ -545,19 +542,16 @@ class UnitsTableWindow(QWidget):
             for i, unit in enumerate(units):
                 self.table.insertRow(i)
 
-                # id
                 self.table.setItem(
                     i, 0,
                     QTableWidgetItem(str(unit.get("id")))
                 )
 
-                # имя
                 self.table.setItem(
                     i, 1,
                     QTableWidgetItem(unit.get("name", ""))
                 )
 
-                # кнопка удаления
                 unit_id = unit.get("id")
 
                 delete_button = QPushButton("Удалить")
@@ -574,7 +568,7 @@ class UnitsTableWindow(QWidget):
                 self.table.setCellWidget(i, 2, container)
 
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"{e}")
+            print(f"Ошибка: {e}")
 
     # -------------------- DELETE --------------------
 
@@ -584,20 +578,16 @@ class UnitsTableWindow(QWidget):
     async def send_delete_request(self, unit_id):
         try:
             response = await self.client.delete(
-                f"/api/v1/unit_creator/{unit_id}"
+                f"/api/v1/units/{unit_id}"
             )
 
             if response.status_code in (200, 204):
                 await self.update_data()
             else:
-                QMessageBox.warning(
-                    self,
-                    "Ошибка",
-                    f"Ошибка удаления: {response.status_code}"
-                )
+                print(f"Ошибка удаления: {response.status_code}")
 
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка сети", str(e))
+            print(f"Ошибка сети: {e}")
 
     # -------------------- CLOSE --------------------
 

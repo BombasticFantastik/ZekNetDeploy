@@ -1,5 +1,5 @@
 from app.db_models.prisoners_etalons import Unit
-from app.repositories.units import UnitRepository
+from app.repositories import UnitRepository
 
 from app.core.config import settings
 

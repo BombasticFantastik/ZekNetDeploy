@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Depends
 from typing import Annotated
 
-from app.dependencies.photoscan import get_photoscan_service
-from app.services.photoscan import PhotoScanService
+from app.dependencies import get_photoscan_service
+from app.services import PhotoScanService
 
 from app.schemas.prisoners import PrisonerUnitPatch, PrisonerGet
 
@@ -13,55 +13,43 @@ router = APIRouter(
 )
 
 
-@router.post("/scan_save_report")
-async def scan_formation(
+@router.post("/sessions", status_code=201)
+async def create_session(
     file: Annotated[UploadFile, File(...)],
     unit_id: Annotated[int, Form()],
     service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
 ):
-    try:
-        file_bytes = await file.read()
+    file_bytes = await file.read()
 
-        ml_session = await service.process_formation(
-            unit_id=unit_id,
-            file_bytes=file_bytes,
-            filename=file.filename
-        )
+    ml_session = await service.process_formation(
+        unit_id=unit_id,
+        file_bytes=file_bytes,
+        filename=file.filename
+    )
 
-        report = await service.build_report(ml_session.id)
-
-        return report
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise
+    return await service.build_report(ml_session.id)
 
 
-@router.get("/sessions/{ml_session_id}/report")
-async def build_report(
-    ml_session_id: int, 
+@router.get("/sessions/{session_id}/report")
+async def get_session_report(
+    session_id: int,
     service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
 ):
-    return await service.build_report(ml_session_id)
+    return await service.build_report(session_id)
 
 
 # Роуты для добавления и изменения людей вынести в отдельный файл
-@router.post("/prisoners")
+@router.post("/prisoners", status_code=201)
 async def add_prisoners(
     files: Annotated[list[UploadFile], File(...)],
     fios: Annotated[list[str] | None, Form()],
     unit_id: Annotated[list[int], Form()],
     service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
 ):
-    """
-    Принимает файлы и ФИО. Проверяет дубликаты по имени файла в MinIO/Postgres.
-    Грузит новые фото в MinIO, векторизует и сохраняет в БД с ФИО
-    """
     return await service.embedding_formation(files, fios, unit_id)
 
 
-@router.patch("/prisoners/{prisoner_id}", response_model=PrisonerUnitPatch)
+@router.patch("/prisoners/{prisoner_id}", response_model=PrisonerGet)
 async def edit_prisoner(
     prisoner_id: int,
     payload: PrisonerUnitPatch,
@@ -81,7 +69,7 @@ async def get_prisoner(
     prisoner = await service.get_prisoner(prisoner_id)
 
     if not prisoner:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Заключённый не найден")
 
     return prisoner
 
@@ -102,6 +90,6 @@ async def delete_prisoner(
     result = await service.delete_prisoner(prisoner_id)
 
     if not result:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Заключённый не найден")
 
-    return {"status": "deleted"}
+    return {"detail": "Заключённый удалён"}

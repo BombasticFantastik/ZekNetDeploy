@@ -1,8 +1,6 @@
 from app.core.minio_client import MinIOCLient
-from app.services.detection_service import PhotoScanMLService
-from app.repositories.photoscan import PhotoScanRepository
-from app.repositories.units import UnitRepository
-from app.services.embedding_service import EmbeddingMLService
+from app.services import PhotoScanMLService, EmbeddingMLService
+from app.repositories import PhotoScanRepository, UnitRepository
 from app.schemas.prisoners import PrisonerUnitPatch
 
 from uuid import uuid4
@@ -180,7 +178,7 @@ class PhotoScanService:
             )
 
             try:
-                self.repo.create_etalon(
+                await self.repo.create_etalon(
                     photo_path=unique_filename,
                     embedding=embedding,
                     fio=fio,
@@ -207,7 +205,7 @@ class PhotoScanService:
         session = await self.repo.get_session_with_details(session_id)
 
         if not session:
-            raise ValueError("Session not found")
+            raise HTTPException(status_code=404, detail="Сессия не найдена")
         
         exists_prisoners = {p.id for p in session.unit.prisoners}
         

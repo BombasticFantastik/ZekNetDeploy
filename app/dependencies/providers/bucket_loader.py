@@ -1,9 +1,9 @@
 from fastapi import Depends
 
 from app.core.minio_client import MinIOCLient
-from app.dependencies.minio import get_minio_client
-from app.repositories.bucket_loader import BucketLoaderRepository
-from app.services.bucket_loader import BucketLoaderService
+from app.dependencies.providers.minio import get_minio_client
+from app.repositories import BucketLoaderRepository
+from app.services import BucketLoaderService
 from app.core.cv_engine import CVEngine, get_cv_engine
 
 

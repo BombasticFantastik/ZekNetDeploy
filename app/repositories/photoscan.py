@@ -1,4 +1,4 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
 
 from app.db_models.attendance_sessions import AttendanceSession
 from app.db_models.attendance_logs import AttendanceLog
@@ -7,11 +7,16 @@ from app.db_models.prisoners_etalons import PrisonerEtalon, Unit
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-class PhotoScanRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+from app.repositories import BaseRepository
 
-    async def create_session(self, unit_id, snapshot_path, detected_count):
+class PhotoScanRepository(BaseRepository):
+
+    async def create_session(
+            self, 
+            unit_id: int, 
+            snapshot_path: str, 
+            detected_count: int
+    ) -> AttendanceSession:
         session = AttendanceSession(
             unit_id=unit_id,
             snapshot_minio_path=snapshot_path,
@@ -22,7 +27,7 @@ class PhotoScanRepository:
         await self.db.flush()
         return session
     
-    async def find_match(self, embedding):
+    async def find_match(self, embedding: list[float]):
         if embedding is None:
             return None
 
@@ -62,14 +67,14 @@ class PhotoScanRepository:
     
     async def create_log(
         self,
-        session_id,
-        matched_prisoner_id,
-        face_detection_score,
-        bbox,
-        cropped_face_minio_path,
-        match_distance,
-        is_verified
-    ):
+        session_id: int,
+        matched_prisoner_id: int,
+        face_detection_score: float,
+        bbox: list[int],
+        cropped_face_minio_path: str,
+        match_distance: float,
+        is_verified: bool
+    ) -> None:
         log = AttendanceLog(
             session_id=session_id,
             matched_prisoner_id=matched_prisoner_id,
@@ -90,13 +95,13 @@ class PhotoScanRepository:
 
         return set(result.all())
     
-    def create_etalon(
-            self, 
-            photo_path: str, 
-            embedding: list[float],  
-            unit_id: int, 
-            fio: str | None = None
-    ):
+    async def create_etalon(
+        self, 
+        photo_path: str, 
+        embedding: list[float],  
+        unit_id: int, 
+        fio: str | None = None
+    ) -> None:
         etalon = PrisonerEtalon(
             photo_minio_path=photo_path,
             face_embedding=embedding,
@@ -125,7 +130,11 @@ class PhotoScanRepository:
         return result.scalar_one_or_none()
     
     # Вынести в круд функции для людей
-    async def update_prisoner(self, prisoner_id: int, user_data: dict):
+    async def update_prisoner(
+        self, 
+        prisoner_id: int, 
+        user_data: dict
+    ) -> PrisonerEtalon | None:
         prisoner = await self.db.get(PrisonerEtalon, prisoner_id)
 
         if not prisoner:
@@ -134,7 +143,7 @@ class PhotoScanRepository:
         if "unit_id" in user_data:
             unit = await self.db.get(Unit, user_data["unit_id"])
             if not unit:
-                raise ValueError("Unit not found")
+                raise HTTPException(status_code=404, detail="Отряд не найден")
 
         allowed_fields = {"unit_id", "fio"}
 
@@ -148,7 +157,7 @@ class PhotoScanRepository:
         return prisoner
 
     
-    async def get_prisoner(self, prisoner_id: int):
+    async def get_prisoner(self, prisoner_id: int) -> PrisonerEtalon | None:
         prisoner = await self.db.get(PrisonerEtalon, prisoner_id)
 
         if not prisoner:
@@ -156,7 +165,10 @@ class PhotoScanRepository:
         
         return prisoner
     
-    async def get_prisoners(self, unit_id: int | None = None):
+    async def get_prisoners(
+        self, 
+        unit_id: int | None = None
+    ) -> list[PrisonerEtalon]:
         query = select(PrisonerEtalon)
 
         if unit_id is not None:

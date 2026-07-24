@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date
 
 from app.services import ScheduleService
-from app.schemas import SchedulePostPutSchema
+from app.schemas import SchedulePostSchema, SchedulePatchSchema
 from app.dependencies import get_schedule_service
 
 
@@ -13,13 +13,14 @@ router = APIRouter(
 )
 
 
-@router.put("/")
-async def create_edit_schedule(
-    payload: SchedulePostPutSchema,
+@router.post("/", status_code=201)
+async def create_schedule(
+    payload: SchedulePostSchema,
     service: Annotated[ScheduleService, Depends(get_schedule_service)]
 ):
-    return await service.add_upd_schedule(
-        payload.prisoner_id, payload.date, payload.status, payload.note
+    return await service.create_schedule(
+        payload.prisoner_id, payload.date_from, payload.date_to,
+        payload.status, payload.note
     )
 
 
@@ -27,10 +28,10 @@ async def create_edit_schedule(
 async def get_schedule(
     prisoner_id: int,
     service: Annotated[ScheduleService, Depends(get_schedule_service)],
-    date: Optional[date] = Query(None, description="YYYY-MM-DD")
+    target_date: Optional[date] = Query(None, description="YYYY-MM-DD")
 ):
-    if date:
-        result = await service.get_schedule(prisoner_id, date)
+    if target_date:
+        result = await service.get_schedule(prisoner_id, target_date)
         if not result:
             raise HTTPException(status_code=404, detail="Запись не найдена")
         return result
@@ -49,6 +50,21 @@ async def get_schedules_list(
         date_from=date_from,
         date_to=date_to,
     )
+
+
+@router.patch("/{schedule_id}")
+async def update_schedule(
+    schedule_id: int,
+    payload: SchedulePatchSchema,
+    service: Annotated[ScheduleService, Depends(get_schedule_service)]
+):
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="Нет полей для обновления")
+    result = await service.update_schedule(schedule_id, data)
+    if not result:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    return result
 
 
 @router.delete("/{schedule_id}")

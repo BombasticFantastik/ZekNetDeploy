@@ -1,8 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Depends
 from typing import Annotated
 
-from app.dependencies import get_photoscan_service
-from app.services import PhotoScanService
+from app.dependencies import get_photoscan_service, get_prisoner_service
+from app.services import PhotoScanService, PrisonerService
 
 from app.schemas.prisoners import PrisonerUnitPatch, PrisonerGet
 
@@ -38,7 +38,6 @@ async def get_session_report(
     return await service.build_report(session_id)
 
 
-# Роуты для добавления и изменения людей вынести в отдельный файл
 @router.post("/prisoners", status_code=201)
 async def add_prisoners(
     files: Annotated[list[UploadFile], File(...)],
@@ -53,7 +52,7 @@ async def add_prisoners(
 async def edit_prisoner(
     prisoner_id: int,
     payload: PrisonerUnitPatch,
-    service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
+    service: Annotated[PrisonerService, Depends(get_prisoner_service)]
 ):
     return await service.update_prisoner(
         prisoner_id=prisoner_id,
@@ -64,7 +63,7 @@ async def edit_prisoner(
 @router.get("/prisoners/{prisoner_id}", response_model=PrisonerGet)
 async def get_prisoner(
     prisoner_id: int,
-    service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
+    service: Annotated[PrisonerService, Depends(get_prisoner_service)]
 ):
     prisoner = await service.get_prisoner(prisoner_id)
 
@@ -76,7 +75,7 @@ async def get_prisoner(
 
 @router.get("/prisoners", response_model=list[PrisonerGet])
 async def get_prisoners(
-    service: Annotated[PhotoScanService, Depends(get_photoscan_service)],
+    service: Annotated[PrisonerService, Depends(get_prisoner_service)],
     unit_id: Annotated[int | None, Query()] = None
 ):
     return await service.get_prisoners(unit_id)
@@ -85,7 +84,7 @@ async def get_prisoners(
 @router.delete("/prisoners/{prisoner_id}")
 async def delete_prisoner(
     prisoner_id: int,
-    service: Annotated[PhotoScanService, Depends(get_photoscan_service)]
+    service: Annotated[PrisonerService, Depends(get_prisoner_service)]
 ):
     result = await service.delete_prisoner(prisoner_id)
 

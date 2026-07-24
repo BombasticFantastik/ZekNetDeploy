@@ -28,6 +28,12 @@ from .providers.units import (
 )
 
 
+from .providers.prisoners import (
+    get_prisoner_repo,
+    get_prisoner_service,
+)
+
+
 from .providers.schedule import (
     get_schedule_repo,
     get_schedule_service,
@@ -49,6 +55,9 @@ __all__ = [
     # PhotoScan
     "get_photoscan_repo",
     "get_photoscan_service",
+    # Prisoners
+    "get_prisoner_repo",
+    "get_prisoner_service",
     # Schedule
     "get_schedule_repo",
     "get_schedule_service",

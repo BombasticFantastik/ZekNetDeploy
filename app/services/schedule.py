@@ -6,21 +6,22 @@ class ScheduleService:
     def __init__(self, repo: ScheduleRepository):
         self.repo = repo
 
-    async def add_upd_schedule(
+    async def create_schedule(
         self,
         prisoner_id: int,
-        date: date,
+        date_from: date,
+        date_to: date,
         status: str | None = "PRESENT",
         note: str | None = None
     ):
-        return await self.repo.create_edit_schedule(prisoner_id, date, status, note)
+        return await self.repo.create_schedule(prisoner_id, date_from, date_to, status, note)
 
     async def get_schedule(
         self,
         prisoner_id: int,
-        date: date
+        target_date: date
     ):
-        return await self.repo.get_schedule_status(prisoner_id, date)
+        return await self.repo.get_schedule_status(prisoner_id, target_date)
 
     async def get_schedules(
         self,
@@ -30,5 +31,8 @@ class ScheduleService:
     ):
         return await self.repo.get_schedules(prisoner_id, date_from, date_to)
 
+    async def update_schedule(self, schedule_id: int, data: dict):
+        return await self.repo.update_schedule(schedule_id, data)
+
     async def delete_schedule(self, schedule_id: int):
-        return await self.repo.delete_schedule(schedule_id)    
+        return await self.repo.delete_schedule(schedule_id)

@@ -1,9 +1,9 @@
-from sqlalchemy import String, Integer, DateTime, func, ForeignKey
+from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from typing import List
 
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import Base
 
 
@@ -11,10 +11,9 @@ class PrisonerEtalon(Base):
     __tablename__ = "prisoners_etalons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Добавил ФИО человека
     fio: Mapped[str] = mapped_column(String(255), nullable=True)
     photo_minio_path: Mapped[str] = mapped_column(
-        String(512), 
+        String(512),
         nullable=False,
         unique=True
     )
@@ -24,8 +23,8 @@ class PrisonerEtalon(Base):
         nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        default=func.now()
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
     )
     
 

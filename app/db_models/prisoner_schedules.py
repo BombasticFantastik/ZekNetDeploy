@@ -1,6 +1,7 @@
 from sqlalchemy import String, Integer, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
+from datetime import date
 
 from app.core.database import Base
 
@@ -8,8 +9,8 @@ from app.core.database import Base
 class PrisonerSchedule(Base):
     """
     График/расписание статусов заключенного.
-    Позволяет отмечать, где должен находиться заключенный в конкретный день.
-    
+    Позволяет отмечать, где должен находиться заключенный в диапазоне дат.
+
     Возможные статусы:
     - PRESENT: Присутствует в отряде
     - BUSINESS_TRIP: Командировка
@@ -25,7 +26,8 @@ class PrisonerSchedule(Base):
         ForeignKey("prisoners_etalons.id", ondelete="CASCADE"),
         nullable=False
     )
-    date: Mapped["Date"] = mapped_column(Date, nullable=False)  # Дата без времени
+    date_from: Mapped[date] = mapped_column(Date, nullable=False)
+    date_to: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -34,9 +36,8 @@ class PrisonerSchedule(Base):
     note: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True
-    )  # Примечание (например, "Приказ №12")
+    )
 
-    # Связь с заключенным
     prisoner: Mapped["PrisonerEtalon"] = relationship(
         "PrisonerEtalon",
         back_populates="schedules"

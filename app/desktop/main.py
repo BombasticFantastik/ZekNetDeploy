@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow,
                              QAbstractItemView,QHeaderView,QLineEdit,QFileDialog, QMessageBox)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot,Qt,Signal
-#from photoloader import PhotoLoader
 
 import qasync  
 import os

@@ -178,7 +178,7 @@ class PhotoScanService:
             )
 
             try:
-                self.repo.create_etalon(
+                await self.repo.create_etalon(
                     photo_path=unique_filename,
                     embedding=embedding,
                     fio=fio,
@@ -205,7 +205,7 @@ class PhotoScanService:
         session = await self.repo.get_session_with_details(session_id)
 
         if not session:
-            raise ValueError("Session not found")
+            raise HTTPException(status_code=404, detail="Сессия не найдена")
         
         exists_prisoners = {p.id for p in session.unit.prisoners}
         

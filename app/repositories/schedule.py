@@ -1,15 +1,19 @@
 from datetime import date
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db_models.prisoner_schedules import PrisonerSchedule
 
+from app.repositories import BaseRepository
 
-class ScheduleRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+class ScheduleRepository(BaseRepository):
 
-    async def create_edit_schedule(self, prisoner_id: int, date: date, status: str | None = "PRESENT", note: str | None = None) -> PrisonerSchedule:
+    async def create_edit_schedule(
+            self, 
+            prisoner_id: int, 
+            date: date, 
+            status: str | None = "PRESENT", 
+            note: str | None = None
+    ) -> PrisonerSchedule:
         exist = await self.db.scalar(
             select(PrisonerSchedule)
             .where(PrisonerSchedule.prisoner_id == prisoner_id)
@@ -35,7 +39,11 @@ class ScheduleRepository:
         await self.db.commit()
         return new_schedule
 
-    async def get_schedule_status(self, prisoner_id: int, date: date) -> PrisonerSchedule | None:
+    async def get_schedule_status(
+            self, 
+            prisoner_id: int, 
+            date: date
+    ) -> PrisonerSchedule | None:
         return await self.db.scalar(
             select(PrisonerSchedule)
             .where(PrisonerSchedule.prisoner_id == prisoner_id)

@@ -1,15 +1,12 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.db_models.prisoners_etalons import Unit
 
-from sqlalchemy import select, exists
+from sqlalchemy import select
 
+from app.repositories import BaseRepository
 
-class UnitRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+class UnitRepository(BaseRepository):
 
-    async def create_unit(self, unit_name: str):
+    async def create_unit(self, unit_name: str) -> Unit:
         new_unit = Unit(
             name=unit_name
         )
@@ -18,7 +15,7 @@ class UnitRepository:
 
         return new_unit
     
-    async def get_unit_by_id(self, unit_id: int):
+    async def get_unit_by_id(self, unit_id: int) -> Unit | None:
         result = await self.db.scalar(select(Unit).where(Unit.id == unit_id))
         return result
     

@@ -1,8 +1,8 @@
 from app.core.minio_client import MinIOCLient
 from app.services import PhotoScanMLService, EmbeddingMLService
-from app.repositories import PhotoScanRepository, UnitRepository
-from app.schemas.prisoners import PrisonerUnitPatch
+from app.repositories import PhotoScanRepository, UnitRepository, ScheduleRepository
 
+from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import UploadFile, HTTPException
 
@@ -16,13 +16,15 @@ class PhotoScanService:
         embedding_service: EmbeddingMLService,
         minio: MinIOCLient,
         repo: PhotoScanRepository,
-        u_repo: UnitRepository
+        u_repo: UnitRepository,
+        s_repo: ScheduleRepository
     ):
         self.service = service
         self.embedding_service = embedding_service
         self.minio = minio
         self.repo = repo
         self.u_repo = u_repo
+        self.s_repo = s_repo
 
     async def process_formation(
             self, 
@@ -31,7 +33,6 @@ class PhotoScanService:
             unit_id: int
     ):
         detected_faces = self.service.process_raw_image_bytes(file_bytes)
-
 
         if not detected_faces:
             return {
@@ -204,6 +205,8 @@ class PhotoScanService:
     async def build_report(self, session_id: int):
         session = await self.repo.get_session_with_details(session_id)
 
+        actual_date = datetime.now(timezone.utc).date()
+
         if not session:
             raise HTTPException(status_code=404, detail="Сессия не найдена")
         
@@ -220,9 +223,14 @@ class PhotoScanService:
 
         for prisoner in session.unit.prisoners:
             log = found_ids.get(prisoner.id)
+            is_schedule = await self.s_repo.get_schedule_status(prisoner.id, actual_date)
 
             if log:
-                status = "present"
+
+                if is_schedule is not None:
+                    status = f"present: {is_schedule.status}"
+                else:
+                    status = f"present: None of schedule"
                 members.append({
                     "fio": prisoner.fio,
                     "status": status,
@@ -238,10 +246,13 @@ class PhotoScanService:
                 })
 
             else:
-                status = "absent"
+                if is_schedule is not None:
+                    status = f"absent: {is_schedule.status}"
+                else:
+                    status = f"absent: No reason to be absent"
                 members.append({
                     "fio": prisoner.fio,
-                    "status": "absent",
+                    "status": status,
                     "distance": None,
                     "etalon_photo": {
                         "bucket": settings.INFERENCE_BUCKET,
@@ -252,7 +263,7 @@ class PhotoScanService:
 
         for log in session.attendance_logs:
             if log.matched_prisoner_id is None:
-                status = "unknown"
+                status = "unknown: No schedule reason for unknown person"
                 fio = None
 
                 unkmembers.append({
@@ -292,32 +303,3 @@ class PhotoScanService:
             "expected_members": members,
             "unexpected_members": unkmembers
         }
-
-    async def update_prisoner(self, prisoner_id, user_data: PrisonerUnitPatch):
-        data_to_put = user_data.model_dump(exclude_unset=True)
-
-        prisoner = await self.repo.update_prisoner(prisoner_id, data_to_put)
-
-        if not prisoner:
-            raise HTTPException(status_code=404, detail="Prisoner not found")
-        
-        return prisoner
-    
-    async def delete_prisoner(self, prisoner_id: int):
-        prisoner = await self.repo.get_prisoner(prisoner_id)
-
-        if not prisoner:
-            return False
-        
-        await self.minio.delete_image(
-            bucket=settings.INFERENCE_BUCKET,
-            file_id=prisoner.photo_minio_path
-        )
-
-        return await self.repo.delete_prisoner(prisoner_id)
-    
-    async def get_prisoner(self, prisoner_id: int):
-        return await self.repo.get_prisoner(prisoner_id)
-
-    async def get_prisoners(self, unit_id: int | None = None):
-        return await self.repo.get_prisoners(unit_id)

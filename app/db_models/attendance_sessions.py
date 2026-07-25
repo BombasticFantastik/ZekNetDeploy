@@ -1,7 +1,6 @@
-from sqlalchemy import String, Integer, DateTime, func, ForeignKey
+from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import Base
 
@@ -21,7 +20,7 @@ class AttendanceSession(Base):
     detected_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=func.now()
+        default=lambda: datetime.now(timezone.utc)
     )
 
     attendance_logs: Mapped[list["AttendanceLog"]] = relationship(

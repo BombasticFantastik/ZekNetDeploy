@@ -1,5 +1,3 @@
-from fastapi import HTTPException
-
 from app.db_models.attendance_sessions import AttendanceSession
 from app.db_models.attendance_logs import AttendanceLog
 from app.db_models.prisoners_etalons import PrisonerEtalon, Unit
@@ -7,14 +5,15 @@ from app.db_models.prisoners_etalons import PrisonerEtalon, Unit
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.repositories import BaseRepository
+from app.repositories.base import BaseRepository
+
 
 class PhotoScanRepository(BaseRepository):
 
     async def create_session(
-            self, 
-            unit_id: int, 
-            snapshot_path: str, 
+            self,
+            unit_id: int,
+            snapshot_path: str,
             detected_count: int
     ) -> AttendanceSession:
         session = AttendanceSession(
@@ -26,7 +25,7 @@ class PhotoScanRepository(BaseRepository):
         self.db.add(session)
         await self.db.flush()
         return session
-    
+
     async def find_match(self, embedding: list[float]):
         if embedding is None:
             return None
@@ -60,11 +59,11 @@ class PhotoScanRepository(BaseRepository):
                     "fio": row[2],
                     "distance": row[3]
             }
-        
+
         else:
             print("NO ETALONS")
             return None
-    
+
     async def create_log(
         self,
         session_id: int,
@@ -94,12 +93,12 @@ class PhotoScanRepository(BaseRepository):
         )
 
         return set(result.all())
-    
+
     async def create_etalon(
-        self, 
-        photo_path: str, 
-        embedding: list[float],  
-        unit_id: int, 
+        self,
+        photo_path: str,
+        embedding: list[float],
+        unit_id: int,
         fio: str | None = None
     ) -> None:
         etalon = PrisonerEtalon(
@@ -111,11 +110,7 @@ class PhotoScanRepository(BaseRepository):
 
         self.db.add(etalon)
 
-    async def commit(self):
-        await self.db.commit()
-
-    # Вынести отдельно репозиторий создания отчета
-    async def get_session_with_details(self, session_id:int):
+    async def get_session_with_details(self, session_id: int):
         result = await self.db.execute(
             select(AttendanceSession)
             .where(AttendanceSession.id == session_id)
@@ -128,61 +123,3 @@ class PhotoScanRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
-    
-    # Вынести в круд функции для людей
-    async def update_prisoner(
-        self, 
-        prisoner_id: int, 
-        user_data: dict
-    ) -> PrisonerEtalon | None:
-        prisoner = await self.db.get(PrisonerEtalon, prisoner_id)
-
-        if not prisoner:
-            return None
-
-        if "unit_id" in user_data:
-            unit = await self.db.get(Unit, user_data["unit_id"])
-            if not unit:
-                raise HTTPException(status_code=404, detail="Отряд не найден")
-
-        allowed_fields = {"unit_id", "fio"}
-
-        for key, value in user_data.items():
-            if key in allowed_fields:
-                setattr(prisoner, key, value)
-
-        await self.db.commit()
-        await self.db.refresh(prisoner)
-
-        return prisoner
-
-    
-    async def get_prisoner(self, prisoner_id: int) -> PrisonerEtalon | None:
-        prisoner = await self.db.get(PrisonerEtalon, prisoner_id)
-
-        if not prisoner:
-            return None
-        
-        return prisoner
-    
-    async def get_prisoners(
-        self, 
-        unit_id: int | None = None
-    ) -> list[PrisonerEtalon]:
-        query = select(PrisonerEtalon)
-
-        if unit_id is not None:
-            query = query.where(PrisonerEtalon.unit_id == unit_id)
-
-        result = await self.db.scalars(query)
-        return result.all()
-    
-    async def delete_prisoner(self, prisoner_id: int):
-        prisoner = await self.db.get(PrisonerEtalon, prisoner_id)
-
-        if not prisoner:
-            return False
-        
-        await self.db.delete(prisoner)
-        await self.db.commit()
-        return True

@@ -1,8 +1,8 @@
 from app.db_models.prisoners_etalons import Unit
+from app.repositories.base import BaseRepository
 
 from sqlalchemy import select
 
-from app.repositories import BaseRepository
 
 class UnitRepository(BaseRepository):
 

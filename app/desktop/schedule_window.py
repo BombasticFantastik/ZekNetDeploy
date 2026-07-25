@@ -165,9 +165,7 @@ class ScheduleTableWindow(QWidget):
             # ]
             response_p = await self.client.get("/api/v1/photoscan/prisoners")
             self.prisoners = response_p.json()
-            print('_')
-            print(self.prisoners)
-            print('_')
+
 
             # 2. Вызов роутера GET /api/v1/schedule/list
             response = await self.client.get(

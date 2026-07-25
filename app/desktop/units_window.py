@@ -3,7 +3,7 @@ import httpx
 from PySide6.QtWidgets import (QLabel, 
                              QVBoxLayout, QPushButton, QHBoxLayout, 
                              QWidget,QTableWidget,QTableWidgetItem,
-                             QAbstractItemView,QHeaderView,QLineEdit,QFileDialog, QMessageBox)
+                             QAbstractItemView,QHeaderView,QLineEdit,QInputDialog,QMessageBox,QFrame)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
@@ -47,6 +47,7 @@ class UnitsTableWindow(QWidget):
         close_button = QPushButton("Закрыть окно")
         close_button.clicked.connect(self.close)
         left_layout.addWidget(close_button)
+
 
         self.unit_name_input = QLineEdit()
         self.unit_name_input.setPlaceholderText("Имя нового отряда...")

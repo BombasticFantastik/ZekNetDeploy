@@ -3,7 +3,7 @@ import httpx
 from PySide6.QtWidgets import (QLabel, 
                              QVBoxLayout, QPushButton, QHBoxLayout, 
                              QWidget,QTableWidget,QTableWidgetItem,
-                             QAbstractItemView,QHeaderView,QLineEdit,QFileDialog)
+                             QAbstractItemView,QHeaderView,QLineEdit,QFileDialog,QFrame,QInputDialog)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt  
 import os
@@ -56,9 +56,29 @@ class UsersTableWindow(QWidget):
         close_button = QPushButton("Закрыть окно")
         close_button.setFixedWidth(150) 
         close_button.clicked.connect(self.close_this_window)
+
+
         
         left_layout.addWidget(close_button)
+        
+
+        #фильтр
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        left_layout.addWidget(line)
+
+        filter_button = QPushButton("Фильтровать по отряду")
+        filter_button.clicked.connect(self.select_and_filter_unit)
+        left_layout.addWidget(filter_button)
+
+
+        line2 = QFrame()
+        line2.setFrameShape(QFrame.Shape.HLine)
+        left_layout.addWidget(line2)
+
         left_layout.addStretch() 
+
+
         
         # Форма создания / редактирования
         self.user_name_input = QLineEdit()
@@ -105,9 +125,13 @@ class UsersTableWindow(QWidget):
         self.close()
 
     def pick_file(self):
-        """Выбор файла фотографии"""
+        """Быстрый выбор файла без зависания проводника"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Выберите фото", "", "Изображения (*.png *.jpg *.jpeg)"
+            self, 
+            "Выберите фото", 
+            "", 
+            "Изображения (*.png *.jpg *.jpeg)",
+            options=QFileDialog.Option.DontUseNativeDialog  # <-- Нативный диалог не фризит UI
         )
         if file_path:
             self.selected_file_path = file_path
@@ -134,8 +158,12 @@ class UsersTableWindow(QWidget):
         url_path = "/api/v1/photoscan/prisoners"
 
         try:
-            with open(file_path, "rb") as f:
-                image_bytes = f.read()
+            # Асинхронно читаем файл в фоновом потоке, чтобы НЕ блокировать GUI поток PyQt
+            def read_file():
+                with open(file_path, "rb") as f:
+                    return f.read()
+
+            image_bytes = await asyncio.to_thread(read_file)
 
             files = {
                 "files": (os.path.basename(file_path), image_bytes, "image/jpeg")
@@ -159,6 +187,8 @@ class UsersTableWindow(QWidget):
                 self.selected_file_path = None
 
                 await self.update_data()
+            else:
+                print(f"Ошибка бэкенда {response.status_code}: {response.text}")
 
         except Exception as e:
             print("Ошибка сети при создании:", repr(e))
@@ -326,3 +356,56 @@ class UsersTableWindow(QWidget):
 
     def closeEvent(self, event):
         event.accept()
+    def select_and_filter_unit(self):
+        """Слот, который вызывается по клику на кнопку фильтрации"""
+        asyncio.ensure_future(self.show_unit_filter_dialog())
+
+    async def show_unit_filter_dialog(self):
+        try:
+            # 1. Запрашиваем список отрядов
+            response = await self.client.get("/api/v1/units/")
+            if response.status_code != 200:
+                print("Ошибка загрузки отрядов:", response.status_code)
+                return
+
+            units_data = response.json()  # Ожидаем список словарей, например: [{"id": 1, "name": "Отряд 1"}, ...]
+
+            if not units_data:
+                print("Список отрядов пуст")
+                return
+
+            # 2. Формируем список названий для выпадающего списка
+            # Добавляем пункт "Все отряды" для сброса фильтра
+            options = ["Все отряды"] + [f"{u.get('name', 'Без названия')} (ID: {u.get('id')})" for u in units_data]
+
+            # 3. Показываем всплывающее диалоговое окно выбора
+            selected_option, ok = QInputDialog.getItem(
+                self, 
+                "Выбор отряда", 
+                "Выберите отряд для фильтрации:", 
+                options, 
+                0, 
+                False
+            )
+
+            # 4. Если пользователь нажал "ОК"
+            if ok and selected_option:
+                if selected_option == "Все отряды":
+                    # Показываем все строки в таблице
+                    for i in range(self.table.rowCount()):
+                        self.table.setRowHidden(i, False)
+                else:
+                    # Извлекаем ID из скобок (ID: X)
+                    unit_id_str = selected_option.split("(ID: ")[-1].replace(")", "")
+                    
+                    # Фильтруем строки таблицы по названию или ID отряда (Колонка 3 - "Отряд")
+                    for i in range(self.table.rowCount()):
+                        unit_item = self.table.item(i, 3)
+                        unit_text = unit_item.text() if unit_item else ""
+                        
+                        # Скрываем строку, если ID или Название не совпадают с выбранным
+                        is_match = (unit_id_str == unit_text) or (selected_option.split(" (ID:")[0] in unit_text)
+                        self.table.setRowHidden(i, not is_match)
+
+        except Exception as e:
+            print("Ошибка при фильтрации по отряду:", repr(e))

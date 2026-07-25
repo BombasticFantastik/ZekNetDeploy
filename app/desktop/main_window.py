@@ -3,7 +3,7 @@ import cv2
 import httpx
 from PySide6.QtWidgets import (QLabel, QMainWindow, 
                              QVBoxLayout, QPushButton, QHBoxLayout, 
-                             QWidget, QTextEdit)
+                             QWidget, QTextEdit,QInputDialog)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot,Signal
 import os
@@ -15,6 +15,7 @@ from app.desktop.attendance_window import AttendanceTableWindow
 from app.desktop.units_window import UnitsTableWindow
 from app.desktop.users_window import UsersTableWindow
 from app.desktop.schedule_window import ScheduleTableWindow
+from app.desktop.fake_json import fake_json
 
 
 
@@ -39,7 +40,7 @@ class MainWindow(QMainWindow):
         # Это для меня что бы вебку с телефона транслировать, всем остальным сверху код убрать или закомитить, а этот разкомитить!!!
         self.camera = cv2.VideoCapture(0)
         #self.curent_frame = cv2.imread(img_path)
-        self.current_unit_id = 1
+        
         self.attendance_table_window=AttendanceTableWindow()
         self.units_table_window=UnitsTableWindow()
         self.users_table_window=UsersTableWindow()
@@ -50,6 +51,10 @@ class MainWindow(QMainWindow):
 
         
         #правый layout
+        self.select_unit_button = QPushButton("Выбрать Отряд")
+        self.select_unit_button.setFixedWidth(150)
+        self.select_unit_button.clicked.connect(self.select_unit)
+        
         self.take_photo_button = QPushButton('Сделать фото и распознать', self)
         self.take_photo_button.clicked.connect(self.on_take_photo_clicked)
         
@@ -58,6 +63,7 @@ class MainWindow(QMainWindow):
         self.log_output.setPlaceholderText("Результаты обработки появятся здесь...")
         
         right_layout = QVBoxLayout()
+        right_layout.addWidget(self.select_unit_button)
         right_layout.addWidget(self.take_photo_button)
         right_layout.addWidget(self.log_output)
 
@@ -98,6 +104,46 @@ class MainWindow(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_camera)
         self.timer.start(30)
+
+    def select_unit(self):
+            """Слот для кнопки фильтрации"""
+            asyncio.ensure_future(self.show_unit_select_dialog())
+
+    async def show_unit_select_dialog(self):
+        """Загружает отряды и скрывает/показывает строки таблицы"""
+        
+        try:
+            # Используем base_url бэкенда при вызове или полный адрес:
+            response = await self.client.get("http://127.0.0.1:8000/api/v1/units/")
+            if response.status_code != 200:
+                print("Ошибка загрузки отрядов:", response.status_code)
+                return
+
+            units_data = response.json()
+            if not units_data:
+                print("Список отрядов пуст")
+                return
+
+            # Формируем список вариантов для выбора
+            options = [f"{u.get('name', 'Без названия')} (ID: {u.get('id')})" for u in units_data]
+
+            selected_option, ok = QInputDialog.getItem(
+                self, 
+                "Выбор отряда", 
+                "Выберите отряд для фильтрации:", 
+                options, 
+                0, 
+                False
+            )
+            #print(selected_option)
+
+            if ok and selected_option:
+                target_unit_id = selected_option.split("(ID: ")[-1].replace(")", "").strip()
+                self.selected_unit = int(target_unit_id)
+                
+
+        except Exception as e:
+            print("Ошибка при фильтрации по отряду:", repr(e))
 
     def update_camera(self):
         """Регулярно забирает кадр с камеры и выводит на экран"""
@@ -153,9 +199,9 @@ class MainWindow(QMainWindow):
         asyncio.ensure_future(self.send_photo_to_backend(image_bytes))
 
         #ФЕЙКОВОЕ оповещение таблицы об обновлении
-        # if self.attendance_table_window!=None:
-        #     self.attendance_table_window.update_data(fake_json)
-        #     self.log_unit_info(fake_json)
+        if self.attendance_table_window!=None:
+            self.attendance_table_window.update_data(fake_json)
+            self.log_unit_info(fake_json)
         
 
     async def send_photo_to_backend(self, image_bytes: bytes):
@@ -173,13 +219,13 @@ class MainWindow(QMainWindow):
             }
 
             data = {
-                "unit_id": str(self.current_unit_id)
+                "unit_id": str(self.selected_unit)
             }
 
             with open("gui_test.jpg", "wb") as f:
                 f.write(image_bytes)
             self.log_output.append(
-                f"Отправляю unit_id={self.current_unit_id}"
+                f"Отправляю unit_id={self.selected_unit}"
             )
 
             response = await self.client.post(

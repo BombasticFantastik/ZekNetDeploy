@@ -5,13 +5,15 @@ from PySide6.QtWidgets import (QLabel,
                              QWidget,QTableWidget,QTableWidgetItem,
                              QAbstractItemView,QHeaderView,QLineEdit,QInputDialog,QMessageBox,QFrame)
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 import os
 
 
 
 class UnitsTableWindow(QWidget):
+    units_changed = Signal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Отряды")
@@ -94,6 +96,7 @@ class UnitsTableWindow(QWidget):
             if response.status_code in (200, 201):
                 self.unit_name_input.clear()
                 await self.update_data()
+                self.units_changed.emit()
             else:
                 print(f"Ошибка создания: {response.status_code}")
 
@@ -166,6 +169,7 @@ class UnitsTableWindow(QWidget):
 
             if response.status_code in (200, 204):
                 await self.update_data()
+                self.units_changed.emit()
             else:
                 print(f"Ошибка удаления: {response.status_code}")
 

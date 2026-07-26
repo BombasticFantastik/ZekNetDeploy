@@ -11,7 +11,7 @@ class ScheduleService:
         prisoner_id: int,
         date_from: date,
         date_to: date,
-        status: str | None = "PRESENT",
+        status: str | None = "NONE",
         note: str | None = None
     ):
         return await self.repo.create_schedule(prisoner_id, date_from, date_to, status, note)

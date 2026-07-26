@@ -12,7 +12,7 @@ class ScheduleRepository(BaseRepository):
         prisoner_id: int,
         date_from: date,
         date_to: date,
-        status: str | None = "PRESENT",
+        status: str | None = "NONE",
         note: str | None = None
     ) -> PrisonerSchedule:
         new_schedule = PrisonerSchedule(
@@ -37,6 +37,7 @@ class ScheduleRepository(BaseRepository):
             .where(PrisonerSchedule.prisoner_id == prisoner_id)
             .where(PrisonerSchedule.date_from <= target_date)
             .where(PrisonerSchedule.date_to >= target_date)
+            .order_by((PrisonerSchedule.date_to - PrisonerSchedule.date_from).asc())
         )
 
     async def get_schedules(
@@ -53,6 +54,8 @@ class ScheduleRepository(BaseRepository):
             query = query.where(PrisonerSchedule.date_from >= date_from)
         if date_to is not None:
             query = query.where(PrisonerSchedule.date_to <= date_to)
+
+        query = query.order_by((PrisonerSchedule.date_to - PrisonerSchedule.date_from).desc())
 
         result = await self.db.execute(query)
         return result.scalars().all()

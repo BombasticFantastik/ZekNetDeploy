@@ -3,7 +3,7 @@ import cv2
 import httpx
 from PySide6.QtWidgets import (QLabel, QMainWindow,
                              QVBoxLayout, QPushButton, QHBoxLayout,
-                             QWidget, QTextEdit)
+                             QWidget, QTextEdit, QComboBox)
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot
 import os
@@ -12,6 +12,7 @@ from app.desktop.attendance_window import AttendanceTableWindow
 from app.desktop.units_window import UnitsTableWindow
 from app.desktop.users_window import UsersTableWindow
 from app.desktop.schedule_window import ScheduleTableWindow
+from app.desktop.sessions_window import SessionsWindow
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,11 +20,24 @@ IMG_PATH = os.path.join(BASE_DIR, "test.png")
 
 
 def _open_camera():
-    stream_url = f"http://{settings.IP_ADDRESS}:{settings.PORT}/mjpegfeed"
-    cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+    base = f"http://{settings.IP_ADDRESS}:{settings.PORT}"
+    for path in ("/video", "/", "/mjpegfeed"):
+        url = f"{base}{path}"
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
+        if cap.isOpened():
+            print(f"DroidCam поток открыт: {url}")
+            return cap
+        cap.release()
+
+    cap = cv2.VideoCapture(-1, cv2.CAP_MSMF)
     if cap.isOpened():
-        print("DroidCam MJPEG поток открыт")
+        print("Веб-камера (MSMF) открыта")
+        return cap
+
+    cap = cv2.VideoCapture(-1)
+    if cap.isOpened():
+        print("Веб-камера (по умолчанию) открыта")
         return cap
 
     print("Камера не найдена — работаю с test.jpg")
@@ -41,18 +55,24 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        #self.camera = _open_camera()
-        self.camera = cv2.VideoCapture(0)
+        self.camera = _open_camera()
+        #self.camera = cv2.VideoCapture(0)
         self.curent_frame = _read_image(IMG_PATH)
         self._raw_test_bytes = self._load_raw_test()
-        self.current_unit_id = 1
+        self.current_unit_id = None
 
         self.attendance_table_window = AttendanceTableWindow()
         self.units_table_window = UnitsTableWindow()
+        self.units_table_window.units_changed.connect(self._on_external_units_changed)
         self.users_table_window = UsersTableWindow()
         self.schedule_table_window = ScheduleTableWindow()
+        self.sessions_window = SessionsWindow()
 
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60.0)
+
+        self.unit_combo = QComboBox()
+        self.unit_combo.currentIndexChanged.connect(self._on_unit_changed)
+
 
         # правый layout
         self.take_photo_button = QPushButton('Сделать фото и распознать', self)
@@ -81,13 +101,19 @@ class MainWindow(QMainWindow):
         to_users_table_button.clicked.connect(self.show_users_table_window)
         to_schedule_table_button = QPushButton("Просмотреть дневник посещений")
         to_schedule_table_button.clicked.connect(self.show_schedule_table_window)
+        to_sessions_button = QPushButton("История сессий")
+        to_sessions_button.clicked.connect(self.show_sessions_window)
 
         self.image_label = QLabel("нет сигнала")
 
+        left_layout.addWidget(QLabel("<b>Текущий отряд:</b>"))
+        left_layout.addWidget(self.unit_combo)
+        left_layout.addSpacing(10)
         left_layout.addWidget(to_attendance_table_button)
         left_layout.addWidget(to_units_table_button)
         left_layout.addWidget(to_users_table_button)
         left_layout.addWidget(to_schedule_table_button)
+        left_layout.addWidget(to_sessions_button)
         left_layout.addWidget(self.image_label)
 
         main_layout = QHBoxLayout()
@@ -97,6 +123,8 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
+
+        asyncio.ensure_future(self.load_units())
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_camera)
@@ -137,6 +165,36 @@ class MainWindow(QMainWindow):
         except Exception:
             return None
 
+    # ===================== ОТРЯДЫ =====================
+
+    async def load_units(self):
+        try:
+            resp = await self.client.get("/api/v1/units/")
+            if resp.status_code == 200:
+                units = resp.json()
+                self.unit_combo.blockSignals(True)
+                self.unit_combo.clear()
+                for u in units:
+                    self.unit_combo.addItem(u["name"], u["id"])
+                if units:
+                    self.unit_combo.blockSignals(False)
+                    self._on_unit_changed(0)
+                else:
+                    self.unit_combo.blockSignals(False)
+            else:
+                self.log_output.append("Не удалось загрузить отряды")
+        except Exception as e:
+            print(f"Ошибка загрузки отрядов: {e}")
+
+    def _on_unit_changed(self, index):
+        unit_id = self.unit_combo.itemData(index)
+        if unit_id is not None:
+            self.current_unit_id = unit_id
+            self.log_output.append(f"Выбран отряд: {self.unit_combo.currentText()} (ID={unit_id})")
+
+    def _on_external_units_changed(self):
+        asyncio.ensure_future(self.load_units())
+
     # ===================== ФОТО =====================
 
     @Slot()
@@ -159,10 +217,18 @@ class MainWindow(QMainWindow):
 
         self.take_photo_button.setEnabled(False)
 
-        if self.camera is None and self._raw_test_bytes is not None:
-            image_bytes = self._raw_test_bytes
-            self.log_output.append("Использую test.jpg без перекодировки")
+        if self.camera is None:
+            raw = self._load_raw_test()
+            if raw is not None:
+                image_bytes = raw
+                self.log_output.append("Использую test.jpg без перекодировки")
+            else:
+                self.log_output.append("test.jpg не найден, отправляю кадр из памяти")
+                image_bytes = None
         else:
+            image_bytes = None
+
+        if image_bytes is None:
             success, encoded = cv2.imencode('.jpg', self.curent_frame)
             if not success:
                 self.log_output.append("Ошибка: не удалось закодировать кадр.")
@@ -233,6 +299,13 @@ class MainWindow(QMainWindow):
 
     def show_schedule_table_window(self):
         self.schedule_table_window.show()
+
+    def show_sessions_window(self):
+        self.sessions_window.show()
+
+    def showEvent(self, event):
+        asyncio.ensure_future(self.load_units())
+        super().showEvent(event)
 
     # ===================== ЗАКРЫТИЕ =====================
 

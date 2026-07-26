@@ -13,17 +13,17 @@ from PySide6.QtWidgets import (
 )
 
 STATUS_LIST = [
-    ("PRESENT",       "П", "Присутствует",     "#E8F5E9", "#2E7D32"),
+    ("NONE",          "—", "Нет статуса",     "#E8F5E9", "#2E7D32"),
     ("BUSINESS_TRIP", "К", "Командировка",    "#E3F2FD", "#1565C0"),
     ("HOSPITAL",      "Б", "Болеет",          "#FFFDE7", "#F57F17"),
     ("VACATION",      "О", "Отпуск",          "#F3E5F5", "#7B1FA2"),
     ("DISCIPLINARY",  "Д", "Дисциплинарное",  "#FFEBEE", "#C62828"),
-    ("OTHER",         "Р", "Рапорт / Другое", "#FFF3E0", "#E65100"),
+    ("OTHER",         "Р", "Другое",          "#F5F5F5", "#616161"),
 ]
 
 STATUS_CONFIG = {s[0]: {"label": s[1], "name": s[2], "color": s[3], "text_color": s[4]} for s in STATUS_LIST}
 
-_LEGACY_MAP = {"П": "PRESENT", "Б": "HOSPITAL", "Р": "OTHER", "Н": "DISCIPLINARY", "Командировка": "BUSINESS_TRIP"}
+_LEGACY_MAP = {"П": "NONE", "Б": "HOSPITAL", "Р": "OTHER", "Н": "DISCIPLINARY", "Командировка": "BUSINESS_TRIP"}
 
 UNKNOWN_STATUS = {"label": "?", "name": "Неизвестно", "color": "#ECEFF1", "text_color": "#37474F"}
 
@@ -88,10 +88,10 @@ class ScheduleTableWindow(QWidget):
         self.schedule_map = {}
 
         self._selected_schedule_id = None
+        self._current_unit_id = None
 
         self.init_ui()
-        asyncio.ensure_future(self.load_prisoners())
-        asyncio.ensure_future(self.update_data())
+        asyncio.ensure_future(self.load_units())
 
     # ===================== UI =====================
 
@@ -110,6 +110,14 @@ class ScheduleTableWindow(QWidget):
         back_btn = QPushButton("Назад в меню")
         back_btn.clicked.connect(self.close)
         left.addWidget(back_btn)
+
+        left.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
+
+        # --- Фильтр по отряду ---
+        left.addWidget(QLabel("<b>Отряд:</b>"))
+        self.unit_combo = QComboBox()
+        self.unit_combo.currentIndexChanged.connect(self._on_unit_changed)
+        left.addWidget(self.unit_combo)
 
         left.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
 
@@ -168,9 +176,9 @@ class ScheduleTableWindow(QWidget):
         btn_row = QHBoxLayout()
         save_btn = QPushButton("Сохранить")
         save_btn.clicked.connect(lambda: asyncio.ensure_future(self.save_schedule()))
-        reset_btn = QPushButton("Сбросить на П")
+        reset_btn = QPushButton("Сбросить статус")
         reset_btn.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        reset_btn.clicked.connect(lambda: asyncio.ensure_future(self.reset_to_present()))
+        reset_btn.clicked.connect(lambda: asyncio.ensure_future(self.reset_to_none()))
         btn_row.addWidget(save_btn)
         btn_row.addWidget(reset_btn)
         left.addLayout(btn_row)
@@ -197,9 +205,32 @@ class ScheduleTableWindow(QWidget):
 
     # ===================== ЗАГРУЗКА =====================
 
+    async def load_units(self):
+        try:
+            resp = await self.client.get("/api/v1/units/")
+            if resp.status_code == 200:
+                units = resp.json()
+                self.unit_combo.blockSignals(True)
+                self.unit_combo.clear()
+                self.unit_combo.addItem("-- все отряды --", None)
+                for u in units:
+                    self.unit_combo.addItem(u["name"], u["id"])
+                self.unit_combo.blockSignals(False)
+                self._on_unit_changed(0)
+        except Exception as e:
+            print(f"Ошибка загрузки отрядов: {e}")
+
+    def _on_unit_changed(self, index):
+        self._current_unit_id = self.unit_combo.itemData(index)
+        asyncio.ensure_future(self.load_prisoners())
+        asyncio.ensure_future(self.update_data())
+
     async def load_prisoners(self):
         try:
-            resp = await self.client.get("/api/v1/photoscan/prisoners")
+            params = {}
+            if self._current_unit_id is not None:
+                params["unit_id"] = self._current_unit_id
+            resp = await self.client.get("/api/v1/photoscan/prisoners", params=params)
             if resp.status_code == 200:
                 self.prisoners = resp.json()
                 self.form_prisoner.clear()
@@ -234,7 +265,7 @@ class ScheduleTableWindow(QWidget):
                     date_from = item.get("date_from")
                     date_to = item.get("date_to")
                     sid = item.get("id")
-                    status = item.get("status", "PRESENT")
+                    status = item.get("status", "NONE")
                     note = item.get("note", "")
 
                     if not date_from or not date_to:
@@ -271,7 +302,7 @@ class ScheduleTableWindow(QWidget):
 
         for row, p in enumerate(self.prisoners):
             for col, dt in enumerate(self.dates):
-                rec = self.schedule_map.get((p["id"], dt), {"status": "PRESENT", "note": ""})
+                rec = self.schedule_map.get((p["id"], dt), {"status": "NONE", "note": ""})
                 item = QTableWidgetItem(_get_cfg(rec["status"])["label"])
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 item.setFont(font)
@@ -366,17 +397,17 @@ class ScheduleTableWindow(QWidget):
             print(f"Ошибка сети: {e}")
             self.form_info.setText("Ошибка сети")
 
-    async def reset_to_present(self):
+    async def reset_to_none(self):
         sid = self._selected_schedule_id
         if not sid:
             self.form_info.setText("Сначала выберите запись в таблице")
             return
         try:
-            resp = await self.client.patch(f"/api/v1/schedule/{sid}", json={"status": "PRESENT", "note": ""})
+            resp = await self.client.patch(f"/api/v1/schedule/{sid}", json={"status": "NONE", "note": ""})
             if resp.status_code == 200:
                 self._selected_schedule_id = None
                 await self.update_data()
-                self.form_info.setText("Статус сброшен на Присутствует")
+                self.form_info.setText("Статус сброшен")
                 self._clear_form()
             else:
                 print(f"Ошибка: {resp.status_code}")
@@ -393,7 +424,7 @@ class ScheduleTableWindow(QWidget):
         p_id = item.data(Qt.ItemDataRole.UserRole)
         dt = item.data(Qt.ItemDataRole.UserRole + 1)
         person_name = self.prisoners[row]["fio"]
-        rec = self.schedule_map.get((p_id, dt), {"status": "PRESENT", "note": ""})
+        rec = self.schedule_map.get((p_id, dt), {"status": "NONE", "note": ""})
 
         dlg = ScheduleEditDialog(person_name, dt, rec["status"], rec.get("note", ""), self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -401,19 +432,24 @@ class ScheduleTableWindow(QWidget):
             asyncio.ensure_future(self._save_cell(p_id, dt, new_data["status"], new_data["note"], item))
 
     async def _save_cell(self, p_id, dt, status, note, item):
-        rec = self.schedule_map.get((p_id, dt))
-        if rec and rec.get("schedule_id"):
-            sid = rec["schedule_id"]
-            resp = await self.client.patch(f"/api/v1/schedule/{sid}", json={"status": status, "note": note})
-        else:
-            resp = await self.client.post("/api/v1/schedule/", json={
-                "prisoner_id": p_id, "date_from": dt, "date_to": dt,
-                "status": status, "note": note
-            })
-        if resp.status_code in (200, 201):
-            await self.update_data()
-        else:
-            print(f"Ошибка: {resp.status_code}")
+        try:
+            rec = self.schedule_map.get((p_id, dt))
+            if rec and rec.get("schedule_id"):
+                sid = rec["schedule_id"]
+                json_data = {"status": status, "note": note}
+                print(f"[_save_cell] PATCH /api/v1/schedule/{sid} with {json_data}")
+                resp = await self.client.patch(f"/api/v1/schedule/{sid}", json=json_data)
+            else:
+                json_data = {"prisoner_id": p_id, "date_from": dt, "date_to": dt, "status": status, "note": note}
+                print(f"[_save_cell] POST /api/v1/schedule/ with {json_data}")
+                resp = await self.client.post("/api/v1/schedule/", json=json_data)
+            print(f"[_save_cell] response: {resp.status_code} {resp.text[:200]}")
+            if resp.status_code in (200, 201):
+                await self.update_data()
+            else:
+                print(f"[_save_cell] Ошибка: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"[_save_cell] Исключение: {repr(e)}")
 
     # ===================== КОНТЕКСТНОЕ МЕНЮ =====================
 
@@ -450,6 +486,10 @@ class ScheduleTableWindow(QWidget):
             print(f"Ошибка: {e}")
 
     # ===================== ЗАКРЫТИЕ =====================
+
+    def showEvent(self, event):
+        asyncio.ensure_future(self.load_units())
+        super().showEvent(event)
 
     def closeEvent(self, event):
         event.accept()

@@ -2,11 +2,21 @@ from app.core.minio_client import MinIOCLient
 from app.services import PhotoScanMLService, EmbeddingMLService
 from app.repositories import PhotoScanRepository, UnitRepository, ScheduleRepository
 
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import uuid4
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
+
+_STATUS_NAMES = {
+    "NONE": "Нет статуса",
+    "PRESENT": "Нет статуса",
+    "BUSINESS_TRIP": "Командировка",
+    "HOSPITAL": "Больничный",
+    "VACATION": "Отпуск",
+    "DISCIPLINARY": "Дисциплинарное",
+    "OTHER": "Другое",
+}
 
 
 class PhotoScanService:
@@ -205,7 +215,7 @@ class PhotoScanService:
     async def build_report(self, session_id: int):
         session = await self.repo.get_session_with_details(session_id)
 
-        actual_date = datetime.now(timezone.utc).date()
+        actual_date = datetime.now().date()
 
         if not session:
             raise HTTPException(status_code=404, detail="Сессия не найдена")
@@ -226,14 +236,9 @@ class PhotoScanService:
             is_schedule = await self.s_repo.get_schedule_status(prisoner.id, actual_date)
 
             if log:
-
-                if is_schedule is not None:
-                    status = f"present: {is_schedule.status}"
-                else:
-                    status = f"present: None of schedule"
                 members.append({
                     "fio": prisoner.fio,
-                    "status": status,
+                    "status": "Присутствует",
                     "distance": log.match_distance,
                     "etalon_photo": {
                         "bucket": settings.INFERENCE_BUCKET,
@@ -244,12 +249,12 @@ class PhotoScanService:
                         "path": log.cropped_face_minio_path
                     }
                 })
-
             else:
-                if is_schedule is not None:
-                    status = f"absent: {is_schedule.status}"
+                if is_schedule is not None and is_schedule.status not in ("NONE", "PRESENT"):
+                    reason = _STATUS_NAMES.get(is_schedule.status, is_schedule.status)
+                    status = f"Отсутствует: {reason}"
                 else:
-                    status = f"absent: No reason to be absent"
+                    status = "Отсутствует"
                 members.append({
                     "fio": prisoner.fio,
                     "status": status,
@@ -263,7 +268,7 @@ class PhotoScanService:
 
         for log in session.attendance_logs:
             if log.matched_prisoner_id is None:
-                status = "unknown: No schedule reason for unknown person"
+                status = "Неизвестный: Статус отсутствует"
                 fio = None
 
                 unkmembers.append({

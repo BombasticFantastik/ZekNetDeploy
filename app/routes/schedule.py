@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date
 
 from app.services import ScheduleService
-from app.schemas import SchedulePostSchema, SchedulePatchSchema
+from app.schemas import SchedulePostSchema, SchedulePatchSchema, ScheduleReplaceSchema
 from app.dependencies import get_schedule_service
 
 
@@ -65,6 +65,17 @@ async def update_schedule(
     if not result:
         raise HTTPException(status_code=404, detail="Запись не найдена")
     return result
+
+
+@router.put("/replace", status_code=200)
+async def replace_schedule(
+    payload: ScheduleReplaceSchema,
+    service: Annotated[ScheduleService, Depends(get_schedule_service)]
+):
+    return await service.replace_range(
+        payload.prisoner_id, payload.date_from, payload.date_to,
+        payload.status, payload.note
+    )
 
 
 @router.delete("/{schedule_id}")

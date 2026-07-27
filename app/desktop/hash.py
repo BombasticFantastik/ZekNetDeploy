@@ -2,7 +2,7 @@ import hashlib
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-gui_path = os.path.join(BASE_DIR, "gui_test.jpg")
+gui_path = os.path.join(BASE_DIR, "gui_test.png")
 img_path = os.path.join(BASE_DIR, "test.jpg")
 
 with open(gui_path, "rb") as f:

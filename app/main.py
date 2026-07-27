@@ -5,6 +5,7 @@ from app.routes.photoscan import router as photoscan_router
 from app.routes.bucket_loader import router as bucket_loader_router
 from app.routes.units import router as units_router
 from app.routes.schedule import router as schedule_router
+from app.routes.prisoners import router as prisoners_router
 
 # Регаем все три модели метаданных в общеем реестре
 # from app.db_models.prisoners_etalons import PrisonerEtalon
@@ -38,3 +39,4 @@ app.include_router(photoscan_router)
 app.include_router(bucket_loader_router)
 app.include_router(units_router)
 app.include_router(schedule_router)
+app.include_router(prisoners_router)

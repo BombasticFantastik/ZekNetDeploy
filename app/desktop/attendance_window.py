@@ -45,17 +45,9 @@ class AttendanceTableWindow(QWidget):
         right_layout.addWidget(self.table)
 
         left_layout = QVBoxLayout()
-        left_layout.setSpacing(10) 
-        
-        close_button = QPushButton("Закрыть окно")
-        close_button.setFixedWidth(120) 
-        close_button.clicked.connect(self.close_this_window)
-        
-        left_layout.addWidget(close_button)
+        left_layout.setSpacing(10)
 
-
-
-        left_layout.addStretch() 
+        left_layout.addStretch()
 
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(15, 15, 15, 15) 

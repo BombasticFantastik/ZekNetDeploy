@@ -15,6 +15,15 @@ class ScheduleRepository(BaseRepository):
         status: str | None = "NONE",
         note: str | None = None
     ) -> PrisonerSchedule:
+        existing = await self.db.execute(
+            select(PrisonerSchedule)
+            .where(PrisonerSchedule.prisoner_id == prisoner_id)
+            .where(PrisonerSchedule.date_from == date_from)
+            .where(PrisonerSchedule.date_to == date_to)
+        )
+        for s in existing.scalars().all():
+            await self.db.delete(s)
+
         new_schedule = PrisonerSchedule(
             prisoner_id=prisoner_id,
             date_from=date_from,
@@ -51,9 +60,9 @@ class ScheduleRepository(BaseRepository):
         if prisoner_id is not None:
             query = query.where(PrisonerSchedule.prisoner_id == prisoner_id)
         if date_from is not None:
-            query = query.where(PrisonerSchedule.date_from >= date_from)
+            query = query.where(PrisonerSchedule.date_to >= date_from)
         if date_to is not None:
-            query = query.where(PrisonerSchedule.date_to <= date_to)
+            query = query.where(PrisonerSchedule.date_from <= date_to)
 
         query = query.order_by((PrisonerSchedule.date_to - PrisonerSchedule.date_from).desc())
 
@@ -84,3 +93,26 @@ class ScheduleRepository(BaseRepository):
         await self.db.delete(schedule)
         await self.db.commit()
         return True
+
+    async def replace_range(self, prisoner_id: int, date_from: date, date_to: date, status: str, note: str | None = None) -> PrisonerSchedule:
+        """Удаляет все пересекающиеся записи и создаёт одну новую."""
+        overlapping = await self.db.execute(
+            select(PrisonerSchedule)
+            .where(PrisonerSchedule.prisoner_id == prisoner_id)
+            .where(PrisonerSchedule.date_from <= date_to)
+            .where(PrisonerSchedule.date_to >= date_from)
+        )
+        for s in overlapping.scalars().all():
+            await self.db.delete(s)
+
+        new_schedule = PrisonerSchedule(
+            prisoner_id=prisoner_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
+            note=note
+        )
+        self.db.add(new_schedule)
+        await self.db.commit()
+        await self.db.refresh(new_schedule)
+        return new_schedule

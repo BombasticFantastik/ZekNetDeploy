@@ -155,7 +155,7 @@ class UsersTableWindow(QWidget):
         asyncio.ensure_future(self.send_create_request(fio, unit_id, self.selected_file_path))
 
     async def send_create_request(self, fio, unit_id, file_path):
-        url_path = "/api/v1/photoscan/prisoners"
+        url_path = "/api/v1/prisoners/"
 
         try:
             # Асинхронно читаем файл в фоновом потоке, чтобы НЕ блокировать GUI поток PyQt
@@ -166,7 +166,7 @@ class UsersTableWindow(QWidget):
             image_bytes = await asyncio.to_thread(read_file)
 
             files = {
-                "files": (os.path.basename(file_path), image_bytes, "image/jpeg")
+                "files": (os.path.basename(file_path), image_bytes, "image/png")
             }
 
             data = {
@@ -195,7 +195,7 @@ class UsersTableWindow(QWidget):
 
     async def update_data(self):
         """Загрузка списка пользователей и рендер таблицы"""
-        url_path = "/api/v1/photoscan/prisoners"
+        url_path = "/api/v1/prisoners/"
         try:
             response = await self.client.get(url_path)
             if response.status_code != 200:
@@ -327,7 +327,7 @@ class UsersTableWindow(QWidget):
         asyncio.ensure_future(self.send_edit_request(self.current_selected_prisoner_id, payload))
 
     async def send_edit_request(self, prisoner_id: int, payload: dict):
-        url_path = f"/api/v1/photoscan/prisoners/{prisoner_id}"
+        url_path = f"/api/v1/prisoners/{prisoner_id}"
         try:
             response = await self.client.patch(url_path, json=payload)
             if response.status_code in (200, 204):
@@ -344,7 +344,7 @@ class UsersTableWindow(QWidget):
         asyncio.ensure_future(self.send_delete_request(prisoner_id))
 
     async def send_delete_request(self, prisoner_id):
-        url_path = f"/api/v1/photoscan/prisoners/{prisoner_id}"
+        url_path = f"/api/v1/prisoners/{prisoner_id}"
         try:
             response = await self.client.delete(url_path)
             if response.status_code in (200, 204):

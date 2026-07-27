@@ -51,8 +51,7 @@ class PhotoScanMLService:
             if face_numpy.size == 0:
                 continue
                 
-            # 1. Сжимаем матрицу лица в JPG-байты для MinIO
-            success, encoded_face = cv2.imencode(".jpg", face_numpy)
+            success, encoded_face = cv2.imencode(".png", face_numpy)
 
             if not success:
                 continue

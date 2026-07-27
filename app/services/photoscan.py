@@ -2,7 +2,7 @@ from app.core.minio_client import MinIOCLient
 from app.services import PhotoScanMLService, EmbeddingMLService
 from app.repositories import PhotoScanRepository, UnitRepository, ScheduleRepository
 
-from datetime import datetime
+from datetime import datetime, date
 from uuid import uuid4
 from fastapi import UploadFile, HTTPException
 
@@ -78,7 +78,7 @@ class PhotoScanService:
             file_id = await self.minio.put_image(
                 bucket=settings.BUILDINGS_BUCKET,
                 data=face["face_bytes"],
-                content_type="image/jpeg"
+                content_type="image/png"
             )
 
             cropped_path = file_id
@@ -174,13 +174,7 @@ class PhotoScanService:
                 skipped_count += 1
                 continue
 
-            ext = (
-                file.filename.split(".")[-1]
-                if "." in file.filename
-                else "jpg"
-            )
-
-            unique_filename = f"{uuid4()}.{ext}"
+            unique_filename = f"{uuid4()}.png"
 
             await self.minio.put_image(
                 bucket=settings.INFERENCE_BUCKET,
@@ -308,3 +302,15 @@ class PhotoScanService:
             "expected_members": members,
             "unexpected_members": unkmembers
         }
+
+    async def list_sessions(self, target_date: date | None = None):
+        sessions = await self.repo.list_sessions(target_date)
+        result = []
+        for s in sessions:
+            result.append({
+                "id": s.id,
+                "unit_name": s.unit.name if s.unit else None,
+                "created_at": s.created_at,
+                "detected_count": s.detected_count,
+            })
+        return result

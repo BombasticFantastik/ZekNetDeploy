@@ -27,4 +27,4 @@ async def get_image(
     repo: Annotated[BucketLoaderRepository, Depends(get_bucket_loader_repo)]
 ):
     data = await repo.get_image(bucket, file_id)
-    return Response(content=data, media_type="image/jpeg")
+    return Response(content=data, media_type="image/png")

@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (QLabel, QMainWindow,
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot
 import os
-from app.core.config import settings
 from app.desktop.attendance_window import AttendanceTableWindow
 from app.desktop.units_window import UnitsTableWindow
 from app.desktop.users_window import UsersTableWindow
@@ -16,31 +15,17 @@ from app.desktop.sessions_window import SessionsWindow
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-IMG_PATH = os.path.join(BASE_DIR, "test.png")
+IMG_PATH = os.path.join(BASE_DIR, "test.jpg")
 
 
 def _open_camera():
-    base = f"http://{settings.IP_ADDRESS}:{settings.PORT}"
-    for path in ("/video", "/", "/mjpegfeed"):
-        url = f"{base}{path}"
-        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
+    for method, label in [(-1, "Веб-камера (MSMF)")]:
+        cap = cv2.VideoCapture(-1, cv2.CAP_MSMF)
         if cap.isOpened():
-            print(f"DroidCam поток открыт: {url}")
+            print(f"{label} открыта")
             return cap
-        cap.release()
 
-    cap = cv2.VideoCapture(-1, cv2.CAP_MSMF)
-    if cap.isOpened():
-        print("Веб-камера (MSMF) открыта")
-        return cap
-
-    cap = cv2.VideoCapture(-1)
-    if cap.isOpened():
-        print("Веб-камера (по умолчанию) открыта")
-        return cap
-
-    print("Камера не найдена — работаю с test.jpg")
+    print("Камера не найдена — работаю с test.png")
     return None
 
 
@@ -78,7 +63,7 @@ class MainWindow(QMainWindow):
         self.take_photo_button = QPushButton('Сделать фото и распознать', self)
         self.take_photo_button.clicked.connect(self.on_take_photo_clicked)
 
-        self.test_photo_button = QPushButton('Отправить test.jpg', self)
+        self.test_photo_button = QPushButton('Отправить test.png', self)
         self.test_photo_button.clicked.connect(self.on_test_photo_clicked)
 
         self.log_output = QTextEdit(self)
@@ -200,9 +185,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def on_test_photo_clicked(self):
         if self._raw_test_bytes is None:
-            self.log_output.append("test.jpg не найден")
+            self.log_output.append("test.png не найден")
             return
-        self.log_output.append("Отправляю test.jpg...")
+        self.log_output.append("Отправляю test.png...")
         self.test_photo_button.setEnabled(False)
         asyncio.ensure_future(self.send_photo_to_backend(self._raw_test_bytes))
 
@@ -221,15 +206,15 @@ class MainWindow(QMainWindow):
             raw = self._load_raw_test()
             if raw is not None:
                 image_bytes = raw
-                self.log_output.append("Использую test.jpg без перекодировки")
+                self.log_output.append("Использую test.png без перекодировки")
             else:
-                self.log_output.append("test.jpg не найден, отправляю кадр из памяти")
+                self.log_output.append("test.png не найден, отправляю кадр из памяти")
                 image_bytes = None
         else:
             image_bytes = None
 
         if image_bytes is None:
-            success, encoded = cv2.imencode('.jpg', self.curent_frame)
+            success, encoded = cv2.imencode('.png', self.curent_frame)
             if not success:
                 self.log_output.append("Ошибка: не удалось закодировать кадр.")
                 self.take_photo_button.setEnabled(True)
@@ -242,11 +227,8 @@ class MainWindow(QMainWindow):
         self.log_output.append(f"Отправляю unit_id={self.current_unit_id}...")
 
         try:
-            files = {"file": ("webcam_shot.jpg", image_bytes, "image/jpeg")}
+            files = {"file": ("webcam_shot.png", image_bytes, "image/png")}
             data = {"unit_id": str(self.current_unit_id)}
-
-            with open("gui_test.jpg", "wb") as f:
-                f.write(image_bytes)
 
             response = await self.client.post(
                 "/api/v1/photoscan/sessions",

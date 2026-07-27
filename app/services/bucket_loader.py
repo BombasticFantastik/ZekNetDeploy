@@ -28,8 +28,7 @@ class BucketLoaderService:
         for idx, face in enumerate(detected_faces):
             face_numpy = face["image"]
 
-            # Кодируем в JPEG
-            success, encoded = cv2.imencode(".jpg", face_numpy)
+            success, encoded = cv2.imencode(".png", face_numpy)
             if not success:
                 # Лог ошибки через принт - надо исправить
                 print(f"Не удалось закодировать лицо #{idx}")

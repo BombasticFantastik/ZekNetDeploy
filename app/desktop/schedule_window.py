@@ -1,4 +1,3 @@
-import sys
 import asyncio
 from datetime import datetime, timedelta
 
@@ -6,10 +5,10 @@ import httpx
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont, QCursor
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QTableWidget, QTableWidgetItem,
+    QWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView,
-    QLabel, QComboBox, QDateEdit, QDialog,
-    QTextEdit, QFormLayout, QFrame, QMenu, QLineEdit
+    QLabel, QComboBox, QDateEdit,
+    QFrame, QMenu, QLineEdit
 )
 
 STATUS_LIST = [
@@ -33,48 +32,6 @@ def _get_cfg(status: str) -> dict:
     return STATUS_CONFIG.get(canonical, UNKNOWN_STATUS)
 
 
-class ScheduleEditDialog(QDialog):
-    def __init__(self, person_name, date_str, current_status, current_note, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Отметка: {person_name} ({date_str})")
-        self.setFixedSize(380, 230)
-
-        layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
-
-        self.status_combo = QComboBox()
-        for key, label, name, _, _ in STATUS_LIST:
-            self.status_combo.addItem(f"{label} — {name}", key)
-        canonical = _LEGACY_MAP.get(current_status, current_status)
-        idx = self.status_combo.findData(canonical)
-        if idx != -1:
-            self.status_combo.setCurrentIndex(idx)
-
-        self.note_input = QTextEdit()
-        self.note_input.setPlaceholderText("Заметка...")
-        self.note_input.setPlainText(current_note or "")
-
-        form_layout.addRow("Статус:", self.status_combo)
-        form_layout.addRow("Заметка:", self.note_input)
-
-        layout.addLayout(form_layout)
-
-        btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Сохранить")
-        save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Отмена")
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(cancel_btn)
-        btn_layout.addWidget(save_btn)
-        layout.addLayout(btn_layout)
-
-    def get_data(self):
-        return {
-            "status": self.status_combo.currentData(),
-            "note": self.note_input.toPlainText().strip()
-        }
-
-
 class ScheduleTableWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -89,6 +46,8 @@ class ScheduleTableWindow(QWidget):
 
         self._selected_schedule_id = None
         self._current_unit_id = None
+        self._anchor_date = None
+        self._anchor_prisoner_id = None
 
         self.init_ui()
         asyncio.ensure_future(self.load_units())
@@ -99,21 +58,18 @@ class ScheduleTableWindow(QWidget):
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.currentCellChanged.connect(self.on_cell_selected)
-        self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
 
         left = QVBoxLayout()
         left.setSpacing(6)
 
-        # --- Назад ---
         back_btn = QPushButton("Назад в меню")
         back_btn.clicked.connect(self.close)
         left.addWidget(back_btn)
 
         left.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
 
-        # --- Фильтр по отряду ---
         left.addWidget(QLabel("<b>Отряд:</b>"))
         self.unit_combo = QComboBox()
         self.unit_combo.currentIndexChanged.connect(self._on_unit_changed)
@@ -121,7 +77,6 @@ class ScheduleTableWindow(QWidget):
 
         left.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
 
-        # --- Фильтр периода ---
         left.addWidget(QLabel("<b>Период отображения:</b>"))
         row1 = QHBoxLayout()
         self.filter_from = QDateEdit(QDate.currentDate().addDays(-6))
@@ -142,7 +97,6 @@ class ScheduleTableWindow(QWidget):
 
         left.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
 
-        # --- CRUD форма ---
         left.addWidget(QLabel("<b>Управление записью:</b>"))
 
         self.form_prisoner = QComboBox()
@@ -188,7 +142,6 @@ class ScheduleTableWindow(QWidget):
 
         left.addStretch()
 
-        # --- Легенда ---
         left.addWidget(QLabel("<b>Статусы:</b>"))
         for key, label, name, color, text_color in STATUS_LIST:
             lbl = QLabel(f"<b>{label}</b> — {name}")
@@ -230,7 +183,7 @@ class ScheduleTableWindow(QWidget):
             params = {}
             if self._current_unit_id is not None:
                 params["unit_id"] = self._current_unit_id
-            resp = await self.client.get("/api/v1/photoscan/prisoners", params=params)
+            resp = await self.client.get("/api/v1/prisoners/", params=params)
             if resp.status_code == 200:
                 self.prisoners = resp.json()
                 self.form_prisoner.clear()
@@ -323,6 +276,11 @@ class ScheduleTableWindow(QWidget):
 
     # ===================== ВЫБОР ЯЧЕЙКИ =====================
 
+    def _set_form_single_date(self, dt):
+        qdt = QDate.fromString(dt, "yyyy-MM-dd")
+        self.form_date_from.setDate(qdt)
+        self.form_date_to.setDate(qdt)
+
     def on_cell_selected(self, row, col, prev_row, prev_col):
         if row < 0 or col < 0 or not self.prisoners or col >= len(self.dates):
             return
@@ -330,30 +288,36 @@ class ScheduleTableWindow(QWidget):
         dt = self.dates[col]
         rec = self.schedule_map.get((p_id, dt))
 
-        if rec and rec.get("schedule_id"):
-            self._selected_schedule_id = rec["schedule_id"]
+        self._selected_schedule_id = None
 
-            idx = self.form_prisoner.findData(p_id)
-            if idx >= 0:
-                self.form_prisoner.setCurrentIndex(idx)
-            self.form_date_from.setDate(QDate.fromString(rec["date_from"], "yyyy-MM-dd"))
-            self.form_date_to.setDate(QDate.fromString(rec["date_to"], "yyyy-MM-dd"))
+        idx = self.form_prisoner.findData(p_id)
+        if idx >= 0:
+            self.form_prisoner.setCurrentIndex(idx)
+
+        qdt = QDate.fromString(dt, "yyyy-MM-dd")
+
+        if p_id == self._anchor_prisoner_id and self._anchor_date is not None and self._anchor_date != dt:
+            d1 = QDate.fromString(self._anchor_date, "yyyy-MM-dd")
+            d2 = QDate.fromString(dt, "yyyy-MM-dd")
+            self.form_date_from.setDate(min(d1, d2))
+            self.form_date_to.setDate(max(d1, d2))
+            self._anchor_date = None
+            self._anchor_prisoner_id = None
+            self.form_info.setText(f"Диапазон с {self.form_date_from.date().toString('dd.MM')} по {self.form_date_to.date().toString('dd.MM')}")
+        else:
+            self._anchor_date = dt
+            self._anchor_prisoner_id = p_id
+            self._set_form_single_date(dt)
+            self.form_info.setText(f"Запись на {qdt.toString('dd.MM.yyyy')} (кликните ещё одну ячейку для диапазона)")
+
+        if rec and rec.get("schedule_id"):
             status_idx = self.form_status.findData(rec["status"])
             if status_idx >= 0:
                 self.form_status.setCurrentIndex(status_idx)
             self.form_note.setText(rec.get("note", ""))
-            self.form_info.setText(f"Диапазон #{rec['schedule_id']} выбран")
         else:
-            self._selected_schedule_id = None
-
-            idx = self.form_prisoner.findData(p_id)
-            if idx >= 0:
-                self.form_prisoner.setCurrentIndex(idx)
-            self.form_date_from.setDate(QDate.fromString(dt, "yyyy-MM-dd"))
-            self.form_date_to.setDate(QDate.fromString(dt, "yyyy-MM-dd"))
             self.form_status.setCurrentIndex(0)
             self.form_note.clear()
-            self.form_info.setText("Новый диапазон (на день)")
 
     # ===================== CRUD =====================
 
@@ -370,86 +334,52 @@ class ScheduleTableWindow(QWidget):
         self._selected_schedule_id = None
         self.form_note.clear()
         self.form_status.setCurrentIndex(0)
-        dt = QDate.currentDate()
-        self.form_date_from.setDate(dt)
-        self.form_date_to.setDate(dt)
 
     async def save_schedule(self):
         data = self._form_data()
-        sid = self._selected_schedule_id
+        is_single = data["date_from"] == data["date_to"]
         try:
-            if sid:
-                payload = {k: v for k, v in data.items() if k != "prisoner_id"}
-                resp = await self.client.patch(f"/api/v1/schedule/{sid}", json=payload)
-            else:
+            if is_single:
                 resp = await self.client.post("/api/v1/schedule/", json=data)
-
-            if resp.status_code in (200, 201):
-                res = resp.json()
-                self._selected_schedule_id = res.get("id") if isinstance(res, dict) else None
+                ok = resp.status_code == 201
+            else:
+                resp = await self.client.put("/api/v1/schedule/replace", json=data)
+                ok = resp.status_code == 200
+            if ok:
                 await self.update_data()
                 self.form_info.setText("Сохранено")
                 self._clear_form()
             else:
-                print(f"Ошибка: {resp.status_code}")
+                print(f"Ошибка: {resp.status_code} {resp.text[:200]}")
                 self.form_info.setText(f"Ошибка {resp.status_code}")
         except Exception as e:
             print(f"Ошибка сети: {e}")
             self.form_info.setText("Ошибка сети")
 
     async def reset_to_none(self):
-        sid = self._selected_schedule_id
-        if not sid:
-            self.form_info.setText("Сначала выберите запись в таблице")
+        row = self.table.currentRow()
+        col = self.table.currentColumn()
+        if row < 0 or col < 0 or not self.prisoners or col >= len(self.dates):
+            self.form_info.setText("Выберите ячейку в таблице")
             return
-        try:
-            resp = await self.client.patch(f"/api/v1/schedule/{sid}", json={"status": "NONE", "note": ""})
-            if resp.status_code == 200:
-                self._selected_schedule_id = None
-                await self.update_data()
-                self.form_info.setText("Статус сброшен")
-                self._clear_form()
-            else:
-                print(f"Ошибка: {resp.status_code}")
-        except Exception as e:
-            print(f"Ошибка сети: {e}")
+        p_id = self.prisoners[row]["id"]
+        dt = self.dates[col]
+        rec = self.schedule_map.get((p_id, dt))
+        sid = rec.get("schedule_id") if rec else None
 
-    # ===================== ДИАЛОГ =====================
-
-    def on_cell_double_clicked(self, row, col):
-        item = self.table.item(row, col)
-        if not item:
-            return
-
-        p_id = item.data(Qt.ItemDataRole.UserRole)
-        dt = item.data(Qt.ItemDataRole.UserRole + 1)
-        person_name = self.prisoners[row]["fio"]
-        rec = self.schedule_map.get((p_id, dt), {"status": "NONE", "note": ""})
-
-        dlg = ScheduleEditDialog(person_name, dt, rec["status"], rec.get("note", ""), self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            new_data = dlg.get_data()
-            asyncio.ensure_future(self._save_cell(p_id, dt, new_data["status"], new_data["note"], item))
-
-    async def _save_cell(self, p_id, dt, status, note, item):
-        try:
-            rec = self.schedule_map.get((p_id, dt))
-            if rec and rec.get("schedule_id"):
-                sid = rec["schedule_id"]
-                json_data = {"status": status, "note": note}
-                print(f"[_save_cell] PATCH /api/v1/schedule/{sid} with {json_data}")
-                resp = await self.client.patch(f"/api/v1/schedule/{sid}", json=json_data)
-            else:
-                json_data = {"prisoner_id": p_id, "date_from": dt, "date_to": dt, "status": status, "note": note}
-                print(f"[_save_cell] POST /api/v1/schedule/ with {json_data}")
-                resp = await self.client.post("/api/v1/schedule/", json=json_data)
-            print(f"[_save_cell] response: {resp.status_code} {resp.text[:200]}")
-            if resp.status_code in (200, 201):
-                await self.update_data()
-            else:
-                print(f"[_save_cell] Ошибка: {resp.status_code} {resp.text}")
-        except Exception as e:
-            print(f"[_save_cell] Исключение: {repr(e)}")
+        if sid is not None:
+            try:
+                resp = await self.client.delete(f"/api/v1/schedule/{sid}")
+                if resp.status_code == 200:
+                    await self.update_data()
+                    self.form_info.setText("Статус сброшен")
+                    self._clear_form()
+                else:
+                    print(f"Ошибка: {resp.status_code}")
+            except Exception as e:
+                print(f"Ошибка сети: {e}")
+        else:
+            self.form_info.setText("Нет записи для сброса")
 
     # ===================== КОНТЕКСТНОЕ МЕНЮ =====================
 
@@ -465,17 +395,26 @@ class ScheduleTableWindow(QWidget):
         menu = QMenu(self)
         for key, label, name, _, _ in STATUS_LIST:
             action = menu.addAction(f"{label} — {name}")
-            action.triggered.connect(lambda _, k=key: asyncio.ensure_future(
-                self._save_cell(p_id, dt, k, rec.get("note", "") if rec else "", item)
+            action.triggered.connect(lambda _, k=key, pid=p_id, d=dt: asyncio.ensure_future(
+                self._context_set_status(pid, d, k)
             ))
 
         menu.addSeparator()
 
         if rec and rec.get("schedule_id"):
             del_action = menu.addAction(f"Удалить диапазон #{rec['schedule_id']}")
-            del_action.triggered.connect(lambda: asyncio.ensure_future(self._delete_context(rec["schedule_id"])))
+            del_action.triggered.connect(lambda s=rec["schedule_id"]: asyncio.ensure_future(self._delete_context(s)))
 
         menu.exec(QCursor.pos())
+
+    async def _context_set_status(self, p_id, dt, status):
+        try:
+            json_data = {"prisoner_id": p_id, "date_from": dt, "date_to": dt, "status": status, "note": ""}
+            resp = await self.client.post("/api/v1/schedule/", json=json_data)
+            if resp.status_code == 201:
+                await self.update_data()
+        except Exception as e:
+            print(f"Ошибка: {e}")
 
     async def _delete_context(self, sid):
         try:

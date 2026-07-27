@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from app.db_models.attendance_sessions import AttendanceSession
 from app.db_models.attendance_logs import AttendanceLog
 from app.db_models.prisoners_etalons import PrisonerEtalon, Unit
@@ -123,3 +125,21 @@ class PhotoScanRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
+
+    async def list_sessions(self, target_date: date | None = None) -> list[AttendanceSession]:
+        query = (
+            select(
+                AttendanceSession
+            )
+            .options(selectinload(AttendanceSession.unit))
+        )
+        
+        if target_date is not None:
+            query = query.where(
+                AttendanceSession.created_at >= target_date,
+                AttendanceSession.created_at < target_date + timedelta(days=1)
+            )
+
+        query = query.order_by(AttendanceSession.created_at.asc())
+        result = await self.db.scalars(query)
+        return result.all()

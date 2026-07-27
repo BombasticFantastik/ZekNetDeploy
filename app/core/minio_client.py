@@ -41,9 +41,9 @@ class MinIOCLient:
                 except ClientError:
                     await s3.create_bucket(Bucket=bucket)
         
-    async def put_image(self, bucket: str, data: bytes, content_type="image/jpeg", file_id: str | None = None) -> str:
+    async def put_image(self, bucket: str, data: bytes, content_type="image/png", file_id: str | None = None) -> str:
         if not file_id:
-            file_id = f"{uuid4()}.jpg"
+            file_id = f"{uuid4()}.png"
         async with self._get_s3_client() as s3:
             await s3.put_object(
                 Bucket=bucket,

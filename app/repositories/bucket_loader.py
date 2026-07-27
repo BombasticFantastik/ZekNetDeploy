@@ -10,7 +10,7 @@ class BucketLoaderRepository:
         file_id = await self.minio.put_image(
             bucket=settings.INFERENCE_BUCKET,
             data=face_bytes,
-            content_type="image/jpeg"
+            content_type="image/png"
         )
         return file_id
 

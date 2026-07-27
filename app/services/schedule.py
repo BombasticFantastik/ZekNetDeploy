@@ -36,3 +36,6 @@ class ScheduleService:
 
     async def delete_schedule(self, schedule_id: int):
         return await self.repo.delete_schedule(schedule_id)
+
+    async def replace_range(self, prisoner_id: int, date_from: date, date_to: date, status: str, note: str | None = None):
+        return await self.repo.replace_range(prisoner_id, date_from, date_to, status, note)

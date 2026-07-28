@@ -11,7 +11,7 @@ from app.desktop.attendance_window import AttendanceTableWindow
 class SessionsWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("История сессий")
+        self.setWindowTitle("История сессий — отчёты")
         self.resize(1200, 800)
 
         self.client = httpx.AsyncClient(timeout=10.0)
@@ -39,11 +39,11 @@ class SessionsWindow(QWidget):
         self.session_table.setMaximumWidth(350)
         left.addWidget(self.session_table)
 
-        close_btn = QPushButton("Закрыть окно")
+        close_btn = QPushButton("Назад")
         close_btn.clicked.connect(self.close)
         left.addWidget(close_btn)
 
-        self.report_window = AttendanceTableWindow()
+        self.report_window = AttendanceTableWindow(show_back=False)
 
         main = QHBoxLayout()
         main.addLayout(left, 0)

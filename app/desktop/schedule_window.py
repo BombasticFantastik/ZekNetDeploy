@@ -35,7 +35,7 @@ def _get_cfg(status: str) -> dict:
 class ScheduleTableWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("График и посещаемость")
+        self.setWindowTitle("График посещений")
         self.resize(1400, 800)
 
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=10.0)

@@ -4,6 +4,8 @@ from io import BytesIO
 from contextlib import asynccontextmanager
 from types_aiobotocore_s3.client import S3Client
 from botocore.exceptions import ClientError
+import asyncio
+from app.schemas import ImageRequest
 
 # Два наших бакета в MinIO хранилище
 # buildings - фото построений (сырой вход)
@@ -73,3 +75,17 @@ class MinIOCLient:
     async def delete_image(self, bucket: str, file_id: str) -> None:
         async with self._get_s3_client() as s3:
             await s3.delete_object(Bucket=bucket, Key=file_id)
+
+    async def _read_batch_photo(self, s3, image: ImageRequest) -> bytes:
+        response = await s3.get_object(Bucket=image.bucket, Key=image.path)
+        return await response["Body"].read()
+
+    async def get_files_batch(self, images: list[ImageRequest]):
+        async with self._get_s3_client() as s3:
+            tasks = [
+                self._read_batch_photo(s3, image)
+                for image in images
+            ]
+
+            response = await asyncio.gather(*tasks, return_exceptions=True)
+            return response

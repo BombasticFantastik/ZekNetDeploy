@@ -3,7 +3,7 @@ import os
 from app.core.config import settings
 
 from app.utils.image_processing import SCRFDFaceDetector
-from app.utils.vectorization import BuffaloModel
+from app.utils.vectorization import VectorizationModel
 from app.utils.vectorization import FaceOperations
 
 BASE_DIR = os.path.abspath(
@@ -23,7 +23,7 @@ class CVEngine:
         )
 
         self.detector = SCRFDFaceDetector(model_path=self.detector_path, target_size=2048)
-        self.embedder = BuffaloModel(path=self.embedder_path, use_gpu=False)
+        self.embedder = VectorizationModel(path=self.embedder_path, use_gpu=False)
         self.face_operations = FaceOperations()
 
 

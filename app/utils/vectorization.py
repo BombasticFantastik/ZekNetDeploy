@@ -17,42 +17,53 @@ option_path = os.path.join(CURRENT_DIR, 'config.yaml')
 with open(option_path,'r') as file_option:
     files_option=yaml.safe_load(file_option)
 
-class BuffaloModel(Module):
-    def __init__(self, path, use_gpu=False):
+class VectorizationModel(Module):
+    def __init__(self, path,use_gpu=False):
         super().__init__()
-        self.session=ort.InferenceSession(path)
+        opts=ort.SessionOptions()
+        opts.graph_optimization_level=ort.GraphOptimizationLevel.ORT_ENABLE_ALL#максимальная оптимизация графа
+        
+        opts.execution_mode=ort.ExecutionMode.ORT_SEQUENTIAL
+        #opts.intra_op_num_threads=get_optimal_threads()
+
+        opt_path = path.replace('.onnx', '_optimized.onnx')
+        if not os.path.exists(opt_path):
+            opts.optimized_model_filepath=opt_path#оптимизируем модель по пути
+
+        providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] if use_gpu else ['CPUExecutionProvider']
+
+        model_to_load=opt_path if os.path.exists(opt_path) else path
+            
+
+        self.session=ort.InferenceSession(model_to_load,opts,providers=providers)
 
         self.input_name=self.session.get_inputs()[0].name
         self.output_name=self.session.get_outputs()[0].name
-        
-    def forward(self, x):
+    def forward(self,x):
+
         if isinstance(x, torch.Tensor):
-            x_numpy = x.numpy()
+            x_numpy = x.detach().cpu().numpy()
         else:
-            x_numpy = x
-            
-        # Нормализация значений
-        x_numpy = x_numpy * 255
-        x_numpy = (x_numpy - 127.5) / 128.0
+            x_numpy = np.array(x, copy=False)
 
-        # ИСПРАВЛЕНИЕ: Гарантируем, что на вход ONNX придет строго 4-мерный массив [1, C, H, W]
-        if x_numpy.ndim == 2:
-            # Если пришла плоская картинка [H, W], добавляем каналы и батч
-            x_numpy = np.expand_dims(x_numpy, axis=(0, 1)) # Станет [1, 1, H, W]
-        elif x_numpy.ndim == 3:
-            # Если пришла картинка с каналами [C, H, W], добавляем размерность батча
-            x_numpy = np.expand_dims(x_numpy, axis=0) # Станет [1, C, H, W]
+        x_numpy = x_numpy.astype(np.float32)
 
-        # Принудительно приводим к типу float32, так как ONNX не любит float64
-        x_numpy = x_numpy.astype('float32')
+        if x_numpy.ndim == 3:
+            if x_numpy.shape[-1] in (1, 3):
+                x_numpy = np.transpose(x_numpy, (2, 0, 1))
+            x_numpy = np.expand_dims(x_numpy, axis=0)
+        elif x_numpy.ndim == 2:
+            x_numpy = np.expand_dims(x_numpy, axis=(0, 1))
 
-        # Запускаем ONNX сессию
-        output = self.session.run([self.output_name], {self.input_name: x_numpy})
-        
-        output_tensor = torch.from_numpy(output[0])
-        output_tensor = torch.nn.functional.normalize(output_tensor, p=2, dim=1)
-        
-        return output_tensor
+        if x_numpy.max()>1.0:
+            x_numpy=x_numpy/255.0
+        x_numpy = (x.numpy()-0.5)/0.5
+
+        output=self.session.run([self.output_name],{self.input_name:x_numpy})
+        output=torch.from_numpy(output[0])
+        output = torch.nn.functional.normalize(output, p=2, dim=1)
+        return output
+    
 
 class FaceOperations:
     def compare_new_face(self, img,vectors,model,treshold=1.5):

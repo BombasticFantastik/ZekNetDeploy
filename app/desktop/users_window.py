@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import httpx
 from PySide6.QtWidgets import (QLabel, 
                              QVBoxLayout, QPushButton, QHBoxLayout, 
@@ -19,7 +20,6 @@ class UsersTableWindow(QWidget):
         self.current_selected_prisoner_id = None  # ID редактируемого записи
         self.resize(1200, 800) 
 
-        self.BASE_IMAGE_URL = "http://127.0.0.1:8000/api/v1/bucket_loader/image/"
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=10.0)
 
         # Правый layout (Таблица)
@@ -52,17 +52,11 @@ class UsersTableWindow(QWidget):
         left_layout = QVBoxLayout()
         left_layout.setSpacing(10) 
 
-        # Кнопка закрытия
-        close_button = QPushButton("Закрыть окно")
+        close_button = QPushButton("Назад")
         close_button.setFixedWidth(150) 
         close_button.clicked.connect(self.close_this_window)
-
-
-        
         left_layout.addWidget(close_button)
-        
 
-        #фильтр
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         left_layout.addWidget(line)
@@ -204,17 +198,16 @@ class UsersTableWindow(QWidget):
                 
             result_data = response.json()
             self.table.setRowCount(0)
-            
+            batch_requests = []
+
             for i, prisoner in enumerate(result_data):
                 self.table.insertRow(i)
-                
+
                 p_id = prisoner.get("id")
                 p_fio = prisoner.get("fio", "Не указано")
-                
-                # --- ПОЛУЧАЕМ ИЗОБРАЖЕНИЕ ---
+
                 photo_obj = prisoner.get("photo_minio_path") or prisoner.get("photo")
-                
-                # Отряд
+
                 unit = prisoner.get("unit")
                 if isinstance(unit, dict):
                     p_unit_name = unit.get("name", "-")
@@ -222,28 +215,25 @@ class UsersTableWindow(QWidget):
                 else:
                     raw_unit_id = prisoner.get("unit_id", "")
                     p_unit_name = str(raw_unit_id)
-                
-                # Заполнение базовых ячеек
+
                 self.table.setItem(i, 0, QTableWidgetItem(str(p_id)))
                 self.table.setItem(i, 1, QTableWidgetItem(str(p_fio)))
-                
-                # Ячейка с фото
+
                 label_photo = QLabel("Нет фото")
                 label_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setCellWidget(i, 2, label_photo)
 
-                # Обработка URL фото (если объект dict со строкой 'bucket' и 'path' или просто путь)
+                bucket = None
+                path = None
                 if isinstance(photo_obj, dict):
                     bucket = photo_obj.get("bucket", settings.INFERENCE_BUCKET)
                     path = photo_obj.get("path", "")
-                    img_url = f"{self.BASE_IMAGE_URL}{bucket}/{path}"
-                    asyncio.ensure_future(self.fetch_and_render_image(img_url, label_photo))
                 elif isinstance(photo_obj, str) and photo_obj and photo_obj != "—":
-                    # Если бэкенд возвращает сразу имя файла (например uuid4.png)
-                    # Подставь имя бакета, куда бэк сохраняет фото (например "photoscan" или "prisoners")
                     bucket = settings.INFERENCE_BUCKET
-                    img_url = f"{self.BASE_IMAGE_URL}{bucket}/{photo_obj}"
-                    asyncio.ensure_future(self.fetch_and_render_image(img_url, label_photo))
+                    path = photo_obj
+
+                if bucket and path:
+                    batch_requests.append((label_photo, bucket, path))
 
                 self.table.setItem(i, 3, QTableWidgetItem(str(p_unit_name)))
                 
@@ -267,32 +257,34 @@ class UsersTableWindow(QWidget):
                 actions_layout.addWidget(delete_btn)
                 
                 self.table.setCellWidget(i, 4, actions_container)
-                
+
+            if batch_requests:
+                asyncio.ensure_future(self._load_batch_images(batch_requests))
+
         except Exception as e:
             print(f"Ошибка при обновлении таблицы: {e}")
 
-    async def fetch_and_render_image(self, url: str, target_label: QLabel):
-        """Асинхронно скачивает картинку из MinIO и отображает её в QLabel"""
+    async def _load_batch_images(self, requests: list[tuple[QLabel, str, str]]):
+        payload = [{"bucket": b, "path": p} for _, b, p in requests]
         try:
-            response = await self.client.get(url)
-            if response.status_code == 200:
-                pixmap = QPixmap()
-                pixmap.loadFromData(response.content)
-                
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        70, 70, 
-                        Qt.AspectRatioMode.KeepAspectRatio, 
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    target_label.setPixmap(scaled)
-                else:
-                    target_label.setText("Ошибка формата")
-            else:
-                target_label.setText(f"ошибка {response.status_code}")
+            resp = await self.client.post("/api/v1/bucket_loader/images", json=payload)
+            if resp.status_code != 200:
+                return
+            b64_list = resp.json()
+            for (label, _, _), b64_data in zip(requests, b64_list):
+                if b64_data is None:
+                    continue
+                try:
+                    img_bytes = base64.b64decode(b64_data)
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(img_bytes)
+                    if not pixmap.isNull():
+                        scaled = pixmap.scaled(70, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        label.setPixmap(scaled)
+                except Exception:
+                    pass
         except Exception as e:
-            print("IMAGE LOAD ERROR:", url, repr(e))
-            target_label.setText("Ошибка сети")
+            print(f"Ошибка загрузки фото: {e}")
 
     def select_user_for_edit(self, prisoner_id: int, fio: str, unit_id):
         """Подставляет данные пользователя в поля формы слева"""

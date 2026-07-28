@@ -1,8 +1,10 @@
+import base64
 import numpy as np
 import cv2
 from fastapi import HTTPException
 
 from app.repositories import BucketLoaderRepository
+from app.schemas import ImageRequest
 
 
 class BucketLoaderService:
@@ -50,3 +52,18 @@ class BucketLoaderService:
             ),
             "uploaded_file_ids": uploaded_ids
         }
+
+    async def get_buckets_paths(self, data: list[ImageRequest]):
+        minio_response = await self.repo.minio.get_files_batch(data)
+        if minio_response is None:
+            return None
+
+        result = []
+        for item in minio_response:
+            if isinstance(item, Exception):
+                result.append(None)
+            elif item is not None:
+                result.append(base64.b64encode(item).decode("utf-8"))
+            else:
+                result.append(None)
+        return result

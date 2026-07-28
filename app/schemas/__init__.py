@@ -1,6 +1,7 @@
 from app.schemas.schedule import SchedulePostSchema, SchedulePatchSchema, ScheduleReplaceSchema
 from app.schemas.unit import UnitCreate
 from app.schemas.prisoners import PrisonerGet, PrisonerPatch, PrisonerUnitPatch
+from app.schemas.bucket_loader import ImageRequest
 
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "PrisonerGet",
     "PrisonerPatch",
     "PrisonerUnitPatch",
+    "ImageRequest",
 ]

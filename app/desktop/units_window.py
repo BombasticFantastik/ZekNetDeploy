@@ -16,7 +16,7 @@ class UnitsTableWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Отряды")
+        self.setWindowTitle("Управление отрядами")
         self.resize(1200, 800)
 
         self.client = httpx.AsyncClient(
@@ -46,7 +46,7 @@ class UnitsTableWindow(QWidget):
         # левая панель
         left_layout = QVBoxLayout()
 
-        close_button = QPushButton("Закрыть окно")
+        close_button = QPushButton("Назад")
         close_button.clicked.connect(self.close)
         left_layout.addWidget(close_button)
 

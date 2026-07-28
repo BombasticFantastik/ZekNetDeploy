@@ -230,9 +230,15 @@ class PhotoScanService:
             is_schedule = await self.s_repo.get_schedule_status(prisoner.id, actual_date)
 
             if log:
+                raw_schedule = is_schedule.status if is_schedule is not None and is_schedule.status not in ("NONE", "PRESENT") else None
+                if raw_schedule:
+                    status = f"Присутствует: {_STATUS_NAMES.get(raw_schedule, raw_schedule)}"
+                else:
+                    status = "Присутствует"
                 members.append({
                     "fio": prisoner.fio,
-                    "status": "Присутствует",
+                    "status": status,
+                    "schedule_status": raw_schedule,
                     "distance": log.match_distance,
                     "etalon_photo": {
                         "bucket": settings.INFERENCE_BUCKET,
@@ -244,14 +250,15 @@ class PhotoScanService:
                     }
                 })
             else:
-                if is_schedule is not None and is_schedule.status not in ("NONE", "PRESENT"):
-                    reason = _STATUS_NAMES.get(is_schedule.status, is_schedule.status)
-                    status = f"Отсутствует: {reason}"
+                raw_schedule = is_schedule.status if is_schedule is not None and is_schedule.status not in ("NONE", "PRESENT") else None
+                if raw_schedule:
+                    status = f"Отсутствует: {_STATUS_NAMES.get(raw_schedule, raw_schedule)}"
                 else:
                     status = "Отсутствует"
                 members.append({
                     "fio": prisoner.fio,
                     "status": status,
+                    "schedule_status": raw_schedule,
                     "distance": None,
                     "etalon_photo": {
                         "bucket": settings.INFERENCE_BUCKET,

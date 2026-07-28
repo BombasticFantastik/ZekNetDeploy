@@ -7,11 +7,6 @@ from PySide6.QtWidgets import (QLabel, QMainWindow,
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import QTimer, Slot
 import os
-from app.desktop.attendance_window import AttendanceTableWindow
-from app.desktop.units_window import UnitsTableWindow
-from app.desktop.users_window import UsersTableWindow
-from app.desktop.schedule_window import ScheduleTableWindow
-from app.desktop.sessions_window import SessionsWindow
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,13 +14,11 @@ IMG_PATH = os.path.join(BASE_DIR, "test.jpg")
 
 
 def _open_camera():
-    for method, label in [(-1, "Веб-камера (MSMF)")]:
-        cap = cv2.VideoCapture(-1, cv2.CAP_MSMF)
-        if cap.isOpened():
-            print(f"{label} открыта")
-            return cap
-
-    print("Камера не найдена — работаю с test.png")
+    cap = cv2.VideoCapture(-1, cv2.CAP_MSMF)
+    if cap.isOpened():
+        print("Веб-камера открыта")
+        return cap
+    print("Камера не найдена")
     return None
 
 
@@ -39,27 +32,24 @@ def _read_image(path):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("MLTeam — Главное меню")
 
         self.camera = _open_camera()
-        #self.camera = cv2.VideoCapture(0)
         self.curent_frame = _read_image(IMG_PATH)
         self._raw_test_bytes = self._load_raw_test()
         self.current_unit_id = None
 
-        self.attendance_table_window = AttendanceTableWindow()
-        self.units_table_window = UnitsTableWindow()
-        self.units_table_window.units_changed.connect(self._on_external_units_changed)
-        self.users_table_window = UsersTableWindow()
-        self.schedule_table_window = ScheduleTableWindow()
-        self.sessions_window = SessionsWindow()
+        self._attendance_window = None
+        self._units_window = None
+        self._users_window = None
+        self._schedule_window = None
+        self._sessions_window = None
 
         self.client = httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60.0)
 
         self.unit_combo = QComboBox()
         self.unit_combo.currentIndexChanged.connect(self._on_unit_changed)
 
-
-        # правый layout
         self.take_photo_button = QPushButton('Сделать фото и распознать', self)
         self.take_photo_button.clicked.connect(self.on_take_photo_clicked)
 
@@ -75,7 +65,6 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.test_photo_button)
         right_layout.addWidget(self.log_output)
 
-        # левый layout
         left_layout = QVBoxLayout()
 
         to_attendance_table_button = QPushButton("Просмотреть посещаемость")
@@ -109,13 +98,11 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        asyncio.ensure_future(self.load_units())
-
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_camera)
         self.timer.start(30)
 
-    # ===================== КАМЕРА / ТЕСТОВОЕ ИЗОБРАЖЕНИЕ =====================
+    # ===================== КАМЕРА =====================
 
     def _get_frame(self):
         if self.camera is not None:
@@ -130,16 +117,12 @@ class MainWindow(QMainWindow):
 
     def update_camera(self):
         frame = self._get_frame()
-
         if frame is None:
             self.image_label.setText("нет сигнала")
             return
-
         self.curent_frame = frame
-
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, c = rgb_image.shape
-
         qt_image = QImage(rgb_image.data, w, h, c * w, QImage.Format_RGB888)
         self.image_label.setPixmap(QPixmap.fromImage(qt_image))
 
@@ -225,7 +208,6 @@ class MainWindow(QMainWindow):
 
     async def send_photo_to_backend(self, image_bytes: bytes):
         self.log_output.append(f"Отправляю unit_id={self.current_unit_id}...")
-
         try:
             files = {"file": ("webcam_shot.png", image_bytes, "image/png")}
             data = {"unit_id": str(self.current_unit_id)}
@@ -246,8 +228,10 @@ class MainWindow(QMainWindow):
 
             result_data = response.json()
 
-            if self.attendance_table_window is not None:
-                self.attendance_table_window.update_data(result_data)
+            if self._attendance_window is None:
+                from app.desktop.attendance_window import AttendanceTableWindow
+                self._attendance_window = AttendanceTableWindow()
+            self._attendance_window.update_data(result_data)
 
             s = result_data.get("summary", {})
             unit = result_data.get("unit", {})
@@ -268,22 +252,38 @@ class MainWindow(QMainWindow):
             self.take_photo_button.setEnabled(True)
             self.test_photo_button.setEnabled(True)
 
-    # ===================== ОКНА =====================
+    # ===================== ОКНА (ленивое создание) =====================
 
     def show_attendance_table_window(self):
-        self.attendance_table_window.show()
+        if self._attendance_window is None:
+            from app.desktop.attendance_window import AttendanceTableWindow
+            self._attendance_window = AttendanceTableWindow()
+        self._attendance_window.show()
 
     def show_units_table_window(self):
-        self.units_table_window.show()
+        if self._units_window is None:
+            from app.desktop.units_window import UnitsTableWindow
+            self._units_window = UnitsTableWindow()
+            self._units_window.units_changed.connect(self._on_external_units_changed)
+        self._units_window.show()
 
     def show_users_table_window(self):
-        self.users_table_window.show()
+        if self._users_window is None:
+            from app.desktop.users_window import UsersTableWindow
+            self._users_window = UsersTableWindow()
+        self._users_window.show()
 
     def show_schedule_table_window(self):
-        self.schedule_table_window.show()
+        if self._schedule_window is None:
+            from app.desktop.schedule_window import ScheduleTableWindow
+            self._schedule_window = ScheduleTableWindow()
+        self._schedule_window.show()
 
     def show_sessions_window(self):
-        self.sessions_window.show()
+        if self._sessions_window is None:
+            from app.desktop.sessions_window import SessionsWindow
+            self._sessions_window = SessionsWindow()
+        self._sessions_window.show()
 
     def showEvent(self, event):
         asyncio.ensure_future(self.load_units())
